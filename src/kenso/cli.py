@@ -1,4 +1,4 @@
-"""CLI: serve, ingest, search, stats."""
+"""CLI: serve, ingest, search, stats, lint."""
 
 from __future__ import annotations
 
@@ -146,6 +146,23 @@ def cmd_stats(args: argparse.Namespace) -> None:
     asyncio.run(_run())
 
 
+def cmd_lint(args: argparse.Namespace) -> None:
+    """Lint markdown files for retrieval quality issues."""
+    from kenso.lint import format_detail, format_json, format_summary, lint_path
+
+    chunk_size = int(os.environ.get("KENSO_CHUNK_SIZE", "4000"))
+    result = lint_path(args.path, chunk_size=chunk_size)
+
+    if args.json:
+        print(format_json(result))
+    elif args.detail:
+        print(format_detail(result))
+    else:
+        print(format_summary(result))
+
+    sys.exit(1 if result.errors > 0 else 0)
+
+
 def _configure_logging(log_level: str = "INFO") -> None:
     """Configure logging based on level string."""
     level = getattr(logging, log_level.upper(), logging.INFO)
@@ -174,6 +191,13 @@ def main() -> None:
     # stats
     sub.add_parser("stats", help="Database statistics")
 
+    # lint
+    p = sub.add_parser("lint", help="Lint markdown files for retrieval quality")
+    p.add_argument("path", help="File or directory to lint")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--detail", action="store_true", help="Show per-file violations")
+    group.add_argument("--json", action="store_true", help="Output as JSON")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -185,4 +209,5 @@ def main() -> None:
         "ingest": cmd_ingest,
         "search": cmd_search,
         "stats": cmd_stats,
+        "lint": cmd_lint,
     }[args.command](args)
