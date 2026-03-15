@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -11,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from kenso.config import KensoConfig
 
-__all__ = ["Backend", "STOP_WORDS"]
+__all__ = ["Backend", "STOP_WORDS", "_load_synonyms", "_apply_synonyms"]
 
 log = logging.getLogger("kenso")
 
@@ -156,11 +157,113 @@ def _expand_compound_terms(text: str) -> str:
     return " ".join(expansions)
 
 
-def _to_fts5_queries(text: str) -> list[str]:
+# -- Synonym expansion -----------------------------------------------------
+
+_cached_synonyms: list[list[str]] | None = None
+_cached_synonyms_path: str | None = None
+
+
+def _load_synonyms() -> list[list[str]]:
+    """Load synonym groups from .kenso/synonyms.yml or .json (cached after first load).
+
+    Returns a list of groups, each group being a list of lowercase equivalent terms.
+    """
+    global _cached_synonyms, _cached_synonyms_path
+
+    env_path = os.environ.get("KENSO_SYNONYMS_PATH")
+    resolved = env_path or ".kenso/synonyms.yml"
+
+    if _cached_synonyms is not None and _cached_synonyms_path == resolved:
+        return _cached_synonyms
+
+    _cached_synonyms_path = resolved
+    _cached_synonyms = []
+
+    p = Path(resolved)
+    if not p.exists() and not env_path:
+        p = Path(".kenso/synonyms.json")
+    if not p.exists():
+        return _cached_synonyms
+
+    try:
+        raw = p.read_text(encoding="utf-8")
+        if p.suffix == ".json":
+            data = json.loads(raw)
+        else:
+            import yaml
+
+            data = yaml.safe_load(raw)
+
+        if isinstance(data, dict) and "groups" in data:
+            for group in data["groups"]:
+                if isinstance(group, list) and len(group) >= 2:
+                    _cached_synonyms.append([str(t).lower() for t in group])
+    except Exception:
+        log.warning("Failed to parse synonym file %s, skipping expansion", p)
+        _cached_synonyms = []
+
+    return _cached_synonyms
+
+
+def _apply_synonyms(words: list[str], groups: list[list[str]]) -> list[str | list[str]]:
+    """Expand query words using synonym groups.
+
+    Returns a list where each element is either a plain word (str) or a list of
+    synonym variants (list[str]) representing an OR group.  Multi-word synonym
+    entries are matched against consecutive query words.
+    """
+    if not groups:
+        return list(words)
+
+    # Build lookup: first word of each entry → [(entry_words, group)]
+    first_word_idx: dict[str, list[tuple[list[str], list[str]]]] = {}
+    for group in groups:
+        for entry in group:
+            entry_words = entry.split()
+            first = entry_words[0]
+            first_word_idx.setdefault(first, []).append((entry_words, group))
+
+    # Sort candidates longest-first so we prefer the longest match
+    for candidates in first_word_idx.values():
+        candidates.sort(key=lambda c: len(c[0]), reverse=True)
+
+    result: list[str | list[str]] = []
+    i = 0
+    while i < len(words):
+        word_lower = words[i].lower()
+        matched = False
+
+        if word_lower in first_word_idx:
+            for entry_words, group in first_word_idx[word_lower]:
+                n = len(entry_words)
+                if i + n <= len(words):
+                    query_slice = [w.lower() for w in words[i : i + n]]
+                    if query_slice == entry_words:
+                        result.append(group)
+                        i += n
+                        matched = True
+                        break
+
+        if not matched:
+            result.append(words[i])
+            i += 1
+
+    return result
+
+
+def _to_fts5_queries(
+    text: str,
+    *,
+    synonym_groups: list[list[str]] | None = None,
+) -> list[str]:
     """Build a cascade of FTS5 queries from broad to narrow.
 
     Strategy: AND (all terms) → NEAR (terms within 10 tokens) → OR (any term).
     Falls through to the next if insufficient results.
+
+    When *synonym_groups* is ``None`` (the default), groups are loaded lazily
+    from the synonym file on disk.  Pass an explicit list (even ``[]``) to
+    override — useful for testing.
     """
     words = text.split()
     if not words:
@@ -171,32 +274,74 @@ def _to_fts5_queries(text: str) -> list[str]:
     if filtered:
         words = filtered
 
-    # Expand camelCase / snake_case words into components
-    expanded: list[str] = []
-    for w in words:
-        expanded.extend(_expand_compound_word(w))
+    # Synonym expansion — runs before compound-word expansion so that
+    # abbreviations like "k8s" are caught on the raw query terms.
+    if synonym_groups is None:
+        synonym_groups = _load_synonyms()
+    syn_items = _apply_synonyms(words, synonym_groups)
 
-    safe = []
-    for w in expanded:
-        cleaned = _FTS5_SPECIAL.sub("", w)
-        if cleaned:
-            safe.append(f'"{cleaned}"')
-    if not safe:
+    # Build per-item safe tokens.  Each item is either a plain word (compound-
+    # expanded) or a synonym OR group (kept as-is).
+    # safe_items elements: str (single quoted token) | list[str] (OR group of quoted tokens)
+    safe_items: list[str | list[str]] = []
+    for item in syn_items:
+        if isinstance(item, list):
+            variants: list[str] = []
+            for v in item:
+                cleaned = _FTS5_SPECIAL.sub("", v)
+                if cleaned:
+                    variants.append(f'"{cleaned}"')
+            if variants:
+                safe_items.append(variants)
+        else:
+            for part in _expand_compound_word(item):
+                cleaned = _FTS5_SPECIAL.sub("", part)
+                if cleaned:
+                    safe_items.append(f'"{cleaned}"')
+
+    if not safe_items:
         return ['""']
-    if len(safe) == 1:
-        # Single-word prefix fallback: word → [word, word*]
-        cleaned = _FTS5_SPECIAL.sub("", expanded[0])
-        queries = [safe[0]]
+
+    # Flatten for counting and OR stage
+    flat: list[str] = []
+    for si in safe_items:
+        if isinstance(si, list):
+            flat.extend(si)
+        else:
+            flat.append(si)
+
+    # Single-token shortcut (no synonym group)
+    if len(flat) == 1 and len(safe_items) == 1 and isinstance(safe_items[0], str):
+        first_raw = syn_items[0] if isinstance(syn_items[0], str) else syn_items[0][0]
+        cleaned = _FTS5_SPECIAL.sub("", first_raw)
+        queries = [flat[0]]
         if " " not in text and len(cleaned) >= 3:
             queries.append(f'"{cleaned}"*')
         return queries
 
-    queries = [
-        " AND ".join(safe),  # Strict: all terms must be present
-    ]
-    if 2 <= len(safe) <= 4:
-        queries.append(f"NEAR({' '.join(safe)}, 10)")  # Proximity: terms within 10 tokens
-    queries.append(" OR ".join(safe))  # Broad: any term
+    # Single synonym group only → just an OR query
+    if len(safe_items) == 1 and isinstance(safe_items[0], list):
+        return [" OR ".join(safe_items[0])]
+
+    # -- AND stage: synonym groups become parenthesised OR sub-expressions ---
+    and_parts: list[str] = []
+    for si in safe_items:
+        if isinstance(si, list):
+            and_parts.append(f"({' OR '.join(si)})" if len(si) > 1 else si[0])
+        else:
+            and_parts.append(si)
+    queries = [" AND ".join(and_parts)]
+
+    # -- NEAR stage: use first variant of each synonym group ----------------
+    near_parts: list[str] = []
+    for si in safe_items:
+        near_parts.append(si[0] if isinstance(si, list) else si)
+    if 2 <= len(near_parts) <= 4:
+        queries.append(f"NEAR({' '.join(near_parts)}, 10)")
+
+    # -- OR stage: flat list of every variant --------------------------------
+    queries.append(" OR ".join(flat))
+
     return queries
 
 

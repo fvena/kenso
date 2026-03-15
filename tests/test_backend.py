@@ -6,8 +6,10 @@ import pytest
 
 from kenso.backend import (
     Backend,
+    _apply_synonyms,
     _expand_compound_terms,
     _expand_compound_word,
+    _load_synonyms,
     _to_fts5_queries,
 )
 from kenso.config import KensoConfig
@@ -741,3 +743,306 @@ class TestStopWordSearchIntegration:
         paths1 = [r["file_path"] for r in r1]
         paths2 = [r["file_path"] for r in r2]
         assert paths1 == paths2
+
+
+# ── Synonym expansion ───────────────────────────────────────────────
+
+
+SAMPLE_GROUPS: list[list[str]] = [
+    ["kubernetes", "k8s", "kube"],
+    ["javascript", "js"],
+    ["typescript", "ts"],
+    ["database", "db"],
+    ["pull request", "pr", "merge request", "mr"],
+    ["continuous integration", "ci"],
+]
+
+
+class TestApplySynonyms:
+    def test_single_word_match(self):
+        result = _apply_synonyms(["k8s"], SAMPLE_GROUPS)
+        assert len(result) == 1
+        assert isinstance(result[0], list)
+        assert set(result[0]) == {"kubernetes", "k8s", "kube"}
+
+    def test_no_match(self):
+        result = _apply_synonyms(["deploy"], SAMPLE_GROUPS)
+        assert result == ["deploy"]
+
+    def test_case_insensitive(self):
+        result = _apply_synonyms(["K8S"], SAMPLE_GROUPS)
+        assert isinstance(result[0], list)
+        assert "kubernetes" in result[0]
+
+    def test_multi_word_synonym(self):
+        result = _apply_synonyms(["pull", "request", "review"], SAMPLE_GROUPS)
+        assert len(result) == 2
+        assert isinstance(result[0], list)  # synonym group for "pull request"
+        assert "pr" in result[0]
+        assert result[1] == "review"
+
+    def test_mixed_synonyms_and_plain(self):
+        result = _apply_synonyms(["deploy", "to", "k8s"], SAMPLE_GROUPS)
+        assert result[0] == "deploy"
+        assert result[1] == "to"
+        assert isinstance(result[2], list)
+        assert "kubernetes" in result[2]
+
+    def test_empty_groups(self):
+        result = _apply_synonyms(["k8s"], [])
+        assert result == ["k8s"]
+
+    def test_empty_words(self):
+        result = _apply_synonyms([], SAMPLE_GROUPS)
+        assert result == []
+
+
+class TestToFts5QueriesWithSynonyms:
+    def test_synonym_in_and_query(self):
+        queries = _to_fts5_queries("deploy k8s", synonym_groups=SAMPLE_GROUPS)
+        and_query = queries[0]
+        assert "AND" in and_query
+        assert '"kubernetes" OR "k8s" OR "kube"' in and_query
+
+    def test_single_synonym_term(self):
+        queries = _to_fts5_queries("k8s", synonym_groups=SAMPLE_GROUPS)
+        # Single synonym group → OR query of all variants
+        assert any("kubernetes" in q for q in queries)
+        assert any("k8s" in q for q in queries)
+
+    def test_no_synonym_file_same_as_before(self):
+        """With empty synonym groups, output matches original behavior."""
+        q_with = _to_fts5_queries("trade settlement", synonym_groups=[])
+        q_without = _to_fts5_queries("trade settlement", synonym_groups=[])
+        assert q_with == q_without
+        assert any("AND" in q for q in q_with)
+
+    def test_multi_word_synonym_in_query(self):
+        queries = _to_fts5_queries("pull request review", synonym_groups=SAMPLE_GROUPS)
+        and_query = queries[0]
+        # "pull request" should be expanded to its synonym group
+        assert "pr" in and_query.lower()
+        # "review" should remain as a plain term
+        assert '"review"' in and_query
+
+    def test_synonyms_case_insensitive(self):
+        queries = _to_fts5_queries("Deploy JS app", synonym_groups=SAMPLE_GROUPS)
+        and_query = queries[0]
+        assert "javascript" in and_query.lower()
+
+
+class TestLoadSynonyms:
+    def test_no_file_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        # Reset cache
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        groups = _load_synonyms()
+        assert groups == []
+
+    def test_loads_yaml_file(self, tmp_path, monkeypatch):
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        kenso_dir = tmp_path / ".kenso"
+        kenso_dir.mkdir()
+        (kenso_dir / "synonyms.yml").write_text(
+            "groups:\n  - [kubernetes, k8s, kube]\n  - [database, db]\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        groups = _load_synonyms()
+        assert len(groups) == 2
+        assert ["kubernetes", "k8s", "kube"] in groups
+
+    def test_loads_json_file(self, tmp_path, monkeypatch):
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        kenso_dir = tmp_path / ".kenso"
+        kenso_dir.mkdir()
+        (kenso_dir / "synonyms.json").write_text('{"groups": [["kubernetes", "k8s", "kube"]]}')
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        groups = _load_synonyms()
+        assert len(groups) == 1
+
+    def test_env_var_overrides_path(self, tmp_path, monkeypatch):
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        custom_file = tmp_path / "custom_synonyms.yml"
+        custom_file.write_text("groups:\n  - [javascript, js]\n")
+        monkeypatch.setenv("KENSO_SYNONYMS_PATH", str(custom_file))
+
+        groups = _load_synonyms()
+        assert len(groups) == 1
+        assert ["javascript", "js"] in groups
+
+    def test_invalid_yaml_returns_empty(self, tmp_path, monkeypatch):
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        kenso_dir = tmp_path / ".kenso"
+        kenso_dir.mkdir()
+        (kenso_dir / "synonyms.yml").write_text("{{invalid yaml: [")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        groups = _load_synonyms()
+        assert groups == []
+
+    def test_caches_after_first_load(self, tmp_path, monkeypatch):
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        kenso_dir = tmp_path / ".kenso"
+        kenso_dir.mkdir()
+        syn_file = kenso_dir / "synonyms.yml"
+        syn_file.write_text("groups:\n  - [kubernetes, k8s]\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        groups1 = _load_synonyms()
+        assert len(groups1) == 1
+
+        # Modify file — should still return cached result
+        syn_file.write_text("groups:\n  - [a, b]\n  - [c, d]\n")
+        groups2 = _load_synonyms()
+        assert groups2 is groups1
+
+
+class TestSynonymSearchIntegration:
+    async def test_synonym_expands_in_search(self, backend, tmp_path, monkeypatch):
+        """Searching 'k8s' with synonym group finds doc containing 'kubernetes'."""
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        kenso_dir = tmp_path / ".kenso"
+        kenso_dir.mkdir()
+        (kenso_dir / "synonyms.yml").write_text("groups:\n  - [kubernetes, k8s, kube]\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        await backend.ingest_file(
+            "k8s.md",
+            [
+                {
+                    "title": "K8s Guide",
+                    "content": "How to deploy applications on kubernetes clusters",
+                    "section_path": "K8s Guide",
+                }
+            ],
+            title="K8s Guide",
+            category="devops",
+            audience="all",
+        )
+        results = await backend.search("k8s")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "k8s.md"
+
+    async def test_multi_word_synonym_search(self, backend, tmp_path, monkeypatch):
+        """Searching 'PR review' finds doc containing 'pull request review'."""
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        kenso_dir = tmp_path / ".kenso"
+        kenso_dir.mkdir()
+        (kenso_dir / "synonyms.yml").write_text(
+            "groups:\n  - [pull request, pr, merge request, mr]\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        await backend.ingest_file(
+            "pr.md",
+            [
+                {
+                    "title": "PR Guide",
+                    "content": "How to do a pull request review properly",
+                    "section_path": "PR Guide",
+                }
+            ],
+            title="PR Guide",
+            category="dev",
+            audience="all",
+        )
+        results = await backend.search("PR review")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "pr.md"
+
+    async def test_no_synonym_file_works_normally(self, backend, tmp_path, monkeypatch):
+        """Without a synonym file, search behaves exactly as before."""
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        await backend.ingest_file(
+            "normal.md",
+            [
+                {
+                    "title": "Normal",
+                    "content": "Regular document about settlement lifecycle",
+                    "section_path": "Normal",
+                }
+            ],
+            title="Normal",
+            category="finance",
+            audience="all",
+        )
+        results = await backend.search("settlement")
+        assert len(results) >= 1
+
+    async def test_synonym_not_applied_to_file_path_fallback(self, backend, tmp_path, monkeypatch):
+        """File path fallback search should not use synonym expansion."""
+        import kenso.backend as mod
+
+        mod._cached_synonyms = None
+        mod._cached_synonyms_path = None
+
+        kenso_dir = tmp_path / ".kenso"
+        kenso_dir.mkdir()
+        (kenso_dir / "synonyms.yml").write_text("groups:\n  - [kubernetes, k8s, kube]\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KENSO_SYNONYMS_PATH", raising=False)
+
+        await backend.ingest_file(
+            "docs/k8s.md",
+            [
+                {
+                    "title": "K8s",
+                    "content": "Kubernetes guide content here",
+                    "section_path": "K8s",
+                }
+            ],
+            title="K8s",
+            category="devops",
+            audience="all",
+        )
+        # File path search uses LIKE, not FTS — synonyms don't apply
+        results = await backend.search("docs/k8s.md")
+        assert len(results) >= 1
