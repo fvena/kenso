@@ -98,6 +98,7 @@ exclude_commit_patterns = [
   "^ci",
   "^build",
 ]
+mode = "init"
 
 [tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
