@@ -16,7 +16,7 @@ __all__ = ["Backend"]
 log = logging.getLogger("kenso")
 
 _FTS5_SPECIAL = re.compile(r'["\*\(\)\-\+\^:]')
-_CAMEL_SPLIT = re.compile(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])')
+_CAMEL_SPLIT = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
 def _expand_compound_word(word: str) -> list[str]:
@@ -70,11 +70,11 @@ def _to_fts5_queries(text: str) -> list[str]:
         return queries
 
     queries = [
-        " AND ".join(safe),                     # Strict: all terms must be present
+        " AND ".join(safe),  # Strict: all terms must be present
     ]
     if 2 <= len(safe) <= 4:
         queries.append(f"NEAR({' '.join(safe)}, 10)")  # Proximity: terms within 10 tokens
-    queries.append(" OR ".join(safe))           # Broad: any term
+    queries.append(" OR ".join(safe))  # Broad: any term
     return queries
 
 
@@ -173,7 +173,9 @@ class Backend:
         return sorted(seen.values(), key=lambda r: r["score"], reverse=True)
 
     async def _rerank_with_relations(
-        self, results: list[dict[str, Any]], boost: float = 0.15,
+        self,
+        results: list[dict[str, Any]],
+        boost: float = 0.15,
     ) -> list[dict[str, Any]]:
         """Boost scores of results that have relates_to links between them."""
         if not await self._table_exists("links") or len(results) < 2:
@@ -184,7 +186,7 @@ class Backend:
 
         rows = await self._db.execute_fetchall(
             f"SELECT source_path, target_path FROM links "
-            f"WHERE source_path IN ({placeholders}) AND target_path IN ({placeholders})",
+            f"WHERE source_path IN ({placeholders}) AND target_path IN ({placeholders})",  # nosec B608
             paths + paths,
         )
 
@@ -200,7 +202,7 @@ class Backend:
         for result in results:
             fp = result["file_path"]
             if fp in connections:
-                result["score"] *= (1 + boost * connections[fp])
+                result["score"] *= 1 + boost * connections[fp]
 
         results.sort(key=lambda r: r["score"], reverse=True)
         return results
@@ -215,7 +217,7 @@ class Backend:
 
         # Batch: tags for all results in one query
         tag_rows = await self._db.execute_fetchall(
-            f"SELECT file_path, tags FROM chunks "
+            f"SELECT file_path, tags FROM chunks "  # nosec B608
             f"WHERE file_path IN ({placeholders}) AND tags IS NOT NULL "
             f"GROUP BY file_path",
             paths,
@@ -232,7 +234,7 @@ class Backend:
         counts_by_path: dict[str, int] = {}
         if has_links:
             count_rows = await self._db.execute_fetchall(
-                f"SELECT path, COUNT(*) FROM ("
+                f"SELECT path, COUNT(*) FROM ("  # nosec B608
                 f"  SELECT source_path AS path FROM links WHERE source_path IN ({placeholders}) "
                 f"  UNION ALL "
                 f"  SELECT target_path AS path FROM links WHERE target_path IN ({placeholders})"
@@ -321,8 +323,14 @@ class Backend:
 
         rows = await self._db.execute_fetchall(sql, params)
         return [
-            {"file_path": r[0], "title": r[1], "content": r[2],
-             "category": r[3], "score": 0.5, "highlight": None}
+            {
+                "file_path": r[0],
+                "title": r[1],
+                "content": r[2],
+                "category": r[3],
+                "score": 0.5,
+                "highlight": None,
+            }
             for r in rows
         ]
 
@@ -336,15 +344,22 @@ class Backend:
         )
         return [
             {
-                "title": r[0], "content": r[1], "category": r[2],
-                "audience": r[3], "tags": json.loads(r[4]) if r[4] else None,
+                "title": r[0],
+                "content": r[1],
+                "category": r[2],
+                "audience": r[3],
+                "tags": json.loads(r[4]) if r[4] else None,
                 "chunk_index": r[5],
             }
             for r in rows
         ]
 
     async def get_related(
-        self, path: str, *, depth: int = 1, relation_type: str | None = None,
+        self,
+        path: str,
+        *,
+        depth: int = 1,
+        relation_type: str | None = None,
     ) -> list[dict[str, Any]] | None:
         if not await self._table_exists("links"):
             return None
@@ -385,12 +400,14 @@ class Backend:
                 if related_path == path:
                     continue  # Skip self-references
 
-                results.append({
-                    "related_path": related_path,
-                    "relation_type": r[1],
-                    "direction": r[2],
-                    "depth": current_depth,
-                })
+                results.append(
+                    {
+                        "related_path": related_path,
+                        "relation_type": r[1],
+                        "direction": r[2],
+                        "depth": current_depth,
+                    }
+                )
 
                 if related_path not in traversed:
                     next_paths.add(related_path)
@@ -410,10 +427,7 @@ class Backend:
             "  COUNT(*) AS chunks "
             "FROM chunks GROUP BY file_path ORDER BY category, file_path"
         )
-        return [
-            {"file_path": r[0], "title": r[1], "category": r[2], "chunks": r[3]}
-            for r in rows
-        ]
+        return [{"file_path": r[0], "title": r[1], "category": r[2], "chunks": r[3]} for r in rows]
 
     async def list_categories(self) -> list[dict[str, Any]]:
         rows = await self._db.execute_fetchall(
@@ -435,7 +449,8 @@ class Backend:
 
     async def get_content_hash(self, path: str) -> str | None:
         rows = await self._db.execute_fetchall(
-            "SELECT content_hash FROM chunks WHERE file_path = ? LIMIT 1", (path,),
+            "SELECT content_hash FROM chunks WHERE file_path = ? LIMIT 1",
+            (path,),
         )
         return rows[0][0] if rows else None
 
@@ -516,8 +531,14 @@ class Backend:
             cols = "file_path, chunk_index, title, section_path, content, searchable_content, category, audience"
             vals = "?, ?, ?, ?, ?, ?, ?, ?"
             params: list[Any] = [
-                rel_path, i, chunk["title"], chunk.get("section_path", ""),
-                chunk["content"], searchable_content, category, audience,
+                rel_path,
+                i,
+                chunk["title"],
+                chunk.get("section_path", ""),
+                chunk["content"],
+                searchable_content,
+                category,
+                audience,
             ]
             if tags_json:
                 cols += ", tags"
@@ -527,7 +548,7 @@ class Backend:
                 cols += ", content_hash"
                 vals += ", ?"
                 params.append(content_hash)
-            await self._db.execute(f"INSERT INTO chunks ({cols}) VALUES ({vals})", params)
+            await self._db.execute(f"INSERT INTO chunks ({cols}) VALUES ({vals})", params)  # nosec B608
         await self._db.commit()
         return len(chunks)
 
@@ -536,8 +557,11 @@ class Backend:
     async def stats(self) -> dict[str, Any]:
         if not await self._table_exists("chunks"):
             return {
-                "docs": 0, "chunks": 0, "content_bytes": 0,
-                "categories": [], "links": None,
+                "docs": 0,
+                "chunks": 0,
+                "content_bytes": 0,
+                "categories": [],
+                "links": None,
             }
         rows = await self._db.execute_fetchall("SELECT count(*) FROM chunks")
         total = rows[0][0]
@@ -556,7 +580,9 @@ class Backend:
             rows = await self._db.execute_fetchall("SELECT count(*) FROM links")
             links = rows[0][0]
         return {
-            "docs": docs, "chunks": total, "content_bytes": size,
+            "docs": docs,
+            "chunks": total,
+            "content_bytes": size,
             "categories": [{"cat": r[0], "docs": r[1], "chunks": r[2]} for r in cats],
             "links": links,
         }
@@ -565,6 +591,7 @@ class Backend:
 
     async def _table_exists(self, name: str) -> bool:
         rows = await self._db.execute_fetchall(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,),
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (name,),
         )
         return len(rows) > 0
