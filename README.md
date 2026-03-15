@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/kenso_logo.svg" alt="kenso" height="140" />
+  <img src="https://github.com/fvena/kenso/raw/main/assets/kenso_logo.svg" alt="kenso" height="140" />
 </p>
 
 <h3 align="center" style="margin-bottom: 0.3em;">
