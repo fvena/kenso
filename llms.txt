@@ -1,127 +1,73 @@
 # kenso
 
-> Your docs are the source of truth. Make them searchable.
+> kenso turns a folder of Markdown files into a searchable knowledge base for AI agents. BM25 keyword search over SQLite FTS5, zero config, no infrastructure. Install with pip, index with one command, connect any MCP client.
 
-kenso is an MCP server that turns a folder of Markdown files into a searchable knowledge base for AI agents. SQLite FTS5, zero config, two dependencies.
+kenso is an MCP server. AI agents search your docs through four tools: `search_docs`, `search_multi`, `get_doc`, and `get_related`. Results are ranked excerpts (~600 tokens per chunk) instead of entire files (3,000–8,000+). The document graph lets agents navigate typed relations between documents.
 
-## Why kenso
+No vector database, no embedding model, no API keys. Two runtime dependencies: `mcp` and `aiosqlite`.
 
-- Search returns ranked excerpts (~600 tokens) instead of dumping entire files (3,000–8,000+).
-- No format conversion, no lock-in — your Markdown files stay as they are.
-- Deterministic results — same query, same answer, every time.
-- Document graph with typed relations — agents navigate context, not just keywords.
-- Two dependencies (`mcp` + `aiosqlite`). No vector DB, no embedding model.
+## Docs
 
-| Capability | Raw file reading | kenso (BM25) | Embedding-based RAG |
-|------------|-----------------|--------------|---------------------|
-| Setup | None | `pip install` + `ingest` | Vector DB + embedding model |
-| Token cost per query | 3,000–8,000+ | ~600 | ~600 |
-| Vocabulary mismatch | None | Aliases + tags + cascade | Semantic similarity |
-| Document relationships | None | Typed graph with traversal | None (flat retrieval) |
-| Deterministic results | Yes | Yes | No (embedding drift) |
-| Dependencies | None | 2 | 5+ |
+- [Getting Started](https://fvena.github.io/kenso/guide/getting-started): Installation, first index, editor setup
+- [Writing Guide](https://fvena.github.io/kenso/guide/writing-guide): How to structure Markdown documents for optimal retrieval
+- [MCP Integration](https://fvena.github.io/kenso/guide/mcp-integration): Editor and client configuration
+- [How kenso Works](https://fvena.github.io/kenso/guide/how-it-works): Search pipeline, chunking, FTS5 internals
 
 ## Quick start
 
 ```bash
-pip install kenso            # core — Python 3.11+, MIT license
-pip install kenso[yaml]      # recommended: YAML frontmatter support
-kenso ingest ./docs
-kenso serve
+pip install kenso[yaml]
+kenso ingest ./docs/
 ```
 
-```bash
-# Test it before connecting to an editor
-kenso search "how does authentication work"
-# → title: "Authentication Flow"
-#   score: 12.4
-#   content_preview: "OAuth 2.0 with PKCE. The client redirects to /authorize..."
-```
+Connect your editor — the MCP client starts kenso automatically. See MCP Integration above.
 
 ## MCP tools
 
-| Tool | Description |
-|------|-------------|
-| `search_docs` | Keyword search with BM25 ranking, dedup, and relation re-ranking |
-| `search_multi` | Multi-query search with Reciprocal Rank Fusion merge |
-| `get_doc` | Retrieve full document content by file path |
-| `get_related` | Navigate document graph with configurable depth and relation type filter |
+| Tool | Purpose |
+|------|---------|
+| `search_docs(query, category?, limit?)` | Keyword search with BM25 ranking and relation re-ranking |
+| `search_multi(queries, category?, limit?)` | Multi-query search with Reciprocal Rank Fusion |
+| `get_doc(path, max_length?)` | Retrieve full document content by path |
+| `get_related(path, depth?, relation_type?)` | Navigate document graph (max depth 3) |
 
 ## Frontmatter fields
 
-```yaml
----
-title: Settlement Lifecycle           # indexed at 10× weight
-category: post-trade                  # indexed at 5× weight
-tags: [settlement, T+2, DVP]         # indexed at 7× weight
-aliases: [trade settlement, liquidación de operaciones]  # bridges vocabulary gaps
-answers:
-  - How are equity trades settled?    # matches question-style queries
-  - What is the T+2 settlement cycle?
-relates_to:
-  - path: guides/setup.md
-    relation: feeds_into
-  - path: compliance/reporting.md
-    relation: triggers
----
-```
-
-Supported fields: `title`, `category`, `tags`, `aliases`, `answers`, `description`, `relates_to`.
-
-## Database resolution
-
-kenso resolves the database with a local-first cascade:
-
-1. `KENSO_DATABASE_URL` env var — explicit override, always wins
-2. `.kenso/docs.db` in the current directory — project-local (default for new projects)
-3. `~/.local/share/kenso/docs.db` — global fallback
-
-Add `.kenso/` to your `.gitignore`.
-
-## Environment variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KENSO_DATABASE_URL` | (cascade above) | SQLite database path override |
-| `KENSO_TRANSPORT` | `stdio` | Transport: stdio, sse, streamable-http |
-| `KENSO_HOST` | `127.0.0.1` | Server host (sse/streamable-http) |
-| `KENSO_PORT` | `8000` | Server port (sse/streamable-http) |
-| `KENSO_CHUNK_SIZE` | `4000` | Max chunk size in characters |
-| `KENSO_CHUNK_OVERLAP` | `0` | Overlap between consecutive chunks |
-| `KENSO_CONTENT_PREVIEW_CHARS` | `200` | Preview length in search results |
-| `KENSO_SEARCH_LIMIT_MAX` | `20` | Maximum results per search |
-| `KENSO_LOG_LEVEL` | `INFO` | Logging level |
-
-## Editor configuration
-
-**Cursor** `.cursor/mcp.json`:
-```json
-{ "mcpServers": { "kenso": { "command": "kenso", "args": ["serve"] } } }
-```
-
-**Claude Code** `.claude/mcp.json`:
-```json
-{ "mcpServers": { "kenso": { "command": "kenso", "args": ["serve"] } } }
-```
-
-**Codex CLI** `~/.codex/config.toml`:
-```toml
-[mcp_servers.kenso]
-command = "kenso"
-args = ["serve"]
-```
-
-If installed in a virtualenv, use the full path: `/path/to/.venv/bin/kenso`
+| Field | Weight | Purpose |
+|-------|--------|---------|
+| `title` | 10× | Document title — strongest ranking signal |
+| `section_path` | 8× | Auto-generated from heading hierarchy |
+| `tags` | 7× | Synonyms, acronyms, alternative terms |
+| `category` | 5× | Topic classification, filterable in search |
+| `aliases` | 1× (in content) | Vocabulary bridges injected into searchable index |
+| `answers` | 1× (in content) | Question-form phrases for natural language queries |
+| `description` | 1× (in content) | Summary text injected into searchable index |
+| `relates_to` | graph | Links to related documents with optional relation type |
 
 ## CLI commands
 
 ```
-kenso ingest <path>
-kenso serve
-kenso search <query>
-kenso stats
+kenso ingest <path>          # index Markdown files
+kenso search <query>         # search from terminal
+kenso stats                  # database statistics
+kenso lint <path>            # retrieval quality analysis
+kenso lint <path> --detail   # per-file violations
+kenso serve                  # start MCP server (usually started by your editor)
 ```
 
-## Project info
+## Configuration
 
-Python 3.11+ · MIT license · Typed (py.typed) · CI + 75% coverage threshold
+All optional, via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KENSO_DATABASE_URL` | `.kenso/docs.db` | SQLite database path |
+| `KENSO_CHUNK_SIZE` | `4000` | Max chunk size in characters |
+| `KENSO_CHUNK_OVERLAP` | `0` | Overlap between consecutive chunks |
+| `KENSO_SEARCH_LIMIT_MAX` | `20` | Maximum results per search |
+| `KENSO_TRANSPORT` | `stdio` | Transport: stdio or streamable-http |
+| `KENSO_HOST` | `127.0.0.1` | Server bind address |
+| `KENSO_PORT` | `8000` | Server port |
+| `KENSO_LOG_LEVEL` | `INFO` | Logging level |
+
+Python 3.11+ · MIT license

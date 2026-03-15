@@ -1,48 +1,29 @@
 # kenso — Full Reference
 
-> Your docs are the source of truth. Make them searchable.
+> kenso turns a folder of Markdown files into a searchable knowledge base for AI agents. BM25 keyword search over SQLite FTS5, zero config, no infrastructure. Install with pip, index with one command, connect any MCP client.
 
-kenso is an MCP server that turns a folder of Markdown files into a searchable knowledge base for AI agents. SQLite FTS5, zero config, two dependencies (`mcp`, `aiosqlite`).
+kenso is an MCP server. AI agents search your docs through four tools: `search_docs`, `search_multi`, `get_doc`, and `get_related`. Results are ranked excerpts (~600 tokens per chunk) instead of entire files (3,000–8,000+). The document graph lets agents navigate typed relations between documents.
 
-## Why kenso
+No vector database, no embedding model, no API keys. Two runtime dependencies: `mcp` and `aiosqlite`.
 
-- Search returns ranked excerpts (~600 tokens) instead of dumping entire files (3,000–8,000+).
-- No format conversion, no lock-in — your Markdown files stay as they are.
-- Deterministic results — same query, same answer, every time.
-- Document graph with typed relations — agents navigate context, not just keywords.
-- Two dependencies. No vector DB, no embedding model.
-
-| Capability | Raw file reading | kenso (BM25) | Embedding-based RAG |
-|------------|-----------------|--------------|---------------------|
-| Setup | None | `pip install` + `ingest` | Vector DB + embedding model |
-| Token cost per query | 3,000–8,000+ | ~600 | ~600 |
-| Vocabulary mismatch | None | Aliases + tags + cascade | Semantic similarity |
-| Document relationships | None | Typed graph with traversal | None (flat retrieval) |
-| Deterministic results | Yes | Yes | No (embedding drift) |
-| Dependencies | None | 2 | 5+ |
+---
 
 ## Quick start
 
 ```bash
-pip install kenso            # core — Python 3.11+, MIT license
-pip install kenso[yaml]      # recommended: YAML frontmatter support
-kenso ingest ./docs
-kenso serve
+pip install kenso[yaml]      # Python 3.11+, MIT license
+kenso ingest ./docs/          # index your Markdown files
 ```
+
+That's it. Connect your editor — the MCP client starts kenso automatically.
 
 ```bash
-# Test it before connecting to an editor
-kenso search "how does authentication work"
-# → title: "Authentication Flow"
-#   score: 12.4
-#   content_preview: "OAuth 2.0 with PKCE. The client redirects to /authorize..."
+# optional — verify the index before connecting an editor
+kenso search "deployment pipeline"
+kenso stats
 ```
 
-Python 3.11+ · MIT license · Typed (py.typed) · CI + 75% coverage threshold
-
 ---
-
-# Usage Reference
 
 ## MCP Tools
 
@@ -99,7 +80,7 @@ Navigate document graph with configurable depth and relation type filter.
 
 Returns: JSON array of `{related_path, relation_type, direction, depth}`. Direction is "incoming" or "outgoing". Cycle-safe via visited set.
 
-On non-existent path: returns empty array `[]` (no error — the path simply has no links).
+On non-existent path: returns empty array `[]`.
 
 ---
 
@@ -111,29 +92,32 @@ Parsed with PyYAML if installed (`pip install kenso[yaml]`), regex fallback othe
 
 | Field | Type | Indexed | Description |
 |-------|------|---------|-------------|
-| `title` | str | 10× weight | Document title |
-| `category` | str | 5× weight | Category |
-| `tags` | str or list | 7× weight | Tags (comma-separated or list) |
-| `aliases` | list[str] | in searchable_content | Vocabulary bridges — lets users find the doc with different terminology |
-| `answers` | list[str] | in searchable_content | Question-form queries — matches natural language questions |
-| `description` | str | in searchable_content | Document description |
+| `title` | str | 10× weight | Document title — strongest ranking signal |
+| `category` | str | 5× weight | Category (fallback: parent directory name, then "general") |
+| `tags` | str or list | 7× weight | Tags (comma-separated or YAML list) |
+| `aliases` | list[str] | in searchable_content | Injected as "Also known as: ..." |
+| `answers` | list[str] | in searchable_content | Injected as "Questions this document answers: ..." |
+| `description` | str | in searchable_content | Summary text appended to searchable content |
 | `relates_to` | str, list, or list of dicts | links table | Document relationships |
 
 ### Full frontmatter example
 
 ```yaml
 ---
-title: Settlement Lifecycle for Equity Trades    # indexed at 10×
-category: post-trade                              # indexed at 5×
-tags: [settlement, clearing, T+2, DVP, CNMV]    # indexed at 7×
-aliases:                                          # injected into searchable_content
+title: Settlement Lifecycle for Equity Trades
+category: post-trade
+tags: [settlement, clearing, T+2, DVP, CNMV]
+aliases:
   - trade settlement
   - post-trade processing
   - liquidación de operaciones
-answers:                                          # injected into searchable_content
+answers:
   - How are equity trades settled?
   - What is the T+2 settlement cycle?
   - What happens when a settlement fails?
+description: >
+  Covers the complete settlement lifecycle from trade execution
+  to final DVP, including T+2 cycles and CNMV reporting.
 relates_to:
   - path: order-management/matching-engine.md
     relation: receives_from
@@ -161,6 +145,8 @@ relates_to:
     relation: triggers
 ```
 
+Glob patterns (`*`, `?`) in paths are silently ignored.
+
 ### Relation type conventions
 
 | Type | Meaning |
@@ -180,55 +166,78 @@ relates_to:
 
 ### kenso ingest \<path\>
 
-Scan directory for .md files and load into database.
-
-**Content hashing:** each file is hashed (SHA-256, truncated to 16 hex chars) on the entire raw text including frontmatter. Unchanged files are skipped. This means frontmatter-only changes (e.g., adding a tag) *are* detected because the frontmatter is part of the hashed text.
-
-### kenso serve
-
-Start MCP server.
+Scan directory for `.md` files and load into database. Files under 50 characters are skipped. Unchanged files (by SHA-256 hash of raw content including frontmatter) are skipped for incremental re-indexing.
 
 ### kenso search \<query\>
 
-Search from CLI. Returns the top 5 results with score, path, title, and highlight.
+Search from terminal. Returns top 5 results with score, path, title, and highlight.
 
 ### kenso stats
 
-Show database statistics. Prints a human-readable table with docs, chunks, content_bytes, categories (with counts), and links count.
+Show database statistics: document count, chunk count, storage size, categories with counts, and link count.
+
+### kenso lint \<path\>
+
+Analyze Markdown files for retrieval quality issues. Works directly on files — no database required.
+
+```bash
+kenso lint <path>              # summary with score and prioritized fixes
+kenso lint <path> --detail     # per-file violations
+kenso lint <path> --json       # JSON output for CI integration
+```
+
+18 rules across three severity levels:
+
+- **Errors** (exit code 1): file too short (KS001), broken relates_to links (KS002), tiny sections dropped during chunking (KS010), glob patterns in links (KS017)
+- **Warnings**: missing tags (KS003), missing/generic titles (KS004/KS005), no preamble (KS006), generic headings (KS007), no H2 sections (KS008), orphan documents (KS012), inconsistent categories (KS014), too many links (KS018)
+- **Info**: oversized sections (KS009), few tags (KS011), redundant tags covered by stemmer (KS013), weak lead sentences (KS015), dangling pronouns (KS016)
+
+Each file scores 0–100. Overall score is the average across all files. `--detail` and `--json` are mutually exclusive.
+
+### kenso serve
+
+Start MCP server. Usually started automatically by your editor's MCP client — you rarely need to run this manually.
 
 ---
 
-## Database resolution
+## Database
 
-kenso resolves the database with a local-first cascade:
+### Resolution cascade
 
 1. `KENSO_DATABASE_URL` env var — explicit override, always wins
-2. `.kenso/docs.db` in the current directory — project-local (default for new projects)
+2. `.kenso/docs.db` in the current directory — project-local (default)
 3. `~/.local/share/kenso/docs.db` — global fallback
 
-Each project gets its own isolated database by default. Add `.kenso/` to your `.gitignore`.
+Add `.kenso/` to your `.gitignore`. SQLite runs in WAL mode — multiple readers are safe.
 
-## Environment variables
+### Environment variables
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `KENSO_DATABASE_URL` | str | (cascade above) | SQLite database path override |
-| `KENSO_TRANSPORT` | str | `stdio` | Transport protocol |
-| `KENSO_HOST` | str | `127.0.0.1` | Server host (sse/streamable-http) |
-| `KENSO_PORT` | str | `8000` | Server port |
 | `KENSO_CHUNK_SIZE` | int | `4000` | Max chunk size in characters |
 | `KENSO_CHUNK_OVERLAP` | int | `0` | Overlap between consecutive chunks |
 | `KENSO_CONTENT_PREVIEW_CHARS` | int | `200` | Preview length in search results |
 | `KENSO_SEARCH_LIMIT_MAX` | int | `20` | Maximum results per search |
+| `KENSO_TRANSPORT` | str | `stdio` | Transport: stdio or streamable-http |
+| `KENSO_HOST` | str | `127.0.0.1` | Server bind address |
+| `KENSO_PORT` | str | `8000` | Server port |
 | `KENSO_LOG_LEVEL` | str | `INFO` | Logging level |
 
 ---
 
 ## Editor configuration
 
+kenso is a standard MCP server. For any client not listed here, set `command` to `kenso` with args `["serve"]`.
+
 **Cursor** `.cursor/mcp.json`:
 ```json
 { "mcpServers": { "kenso": { "command": "kenso", "args": ["serve"] } } }
+```
+
+**VS Code** `.vscode/mcp.json`:
+```json
+{ "servers": { "kenso": { "command": "kenso", "args": ["serve"] } } }
 ```
 
 **Claude Code** `.claude/mcp.json`:
@@ -243,99 +252,111 @@ command = "kenso"
 args = ["serve"]
 ```
 
+**Gemini CLI** `~/.gemini/settings.json`:
+```json
+{ "mcpServers": { "kenso": { "command": "kenso", "args": ["serve"] } } }
+```
+
 If installed in a virtualenv, use the full path: `/path/to/.venv/bin/kenso`
+
+For remote deployment (shared team access):
+```bash
+KENSO_TRANSPORT=streamable-http KENSO_HOST=0.0.0.0 KENSO_PORT=8000 kenso serve
+```
+
+Clients connect by URL:
+```json
+{ "mcpServers": { "kenso": { "url": "https://kenso.your-domain.com/mcp" } } }
+```
 
 ---
 
-# Internals
+## Internals
 
-## Search engine
-
-### Cascade strategy: AND → NEAR → OR
+### Search cascade: AND → NEAR → OR
 
 1. **AND** — all terms must be present (highest precision)
-2. **NEAR** — terms within 10 tokens of each other
+2. **NEAR/10** — terms within 10 tokens of each other (2–4 terms only)
 3. **OR** — any term present (highest recall)
 
-The first stage returning ≥3 results (or `limit` if smaller) wins.
+Stops at the first stage returning ≥ min(3, limit) results. If no stage meets the threshold, the last stage's results are returned.
 
 ### FTS5 column weights
 
-| Column | Weight | Content |
-|--------|--------|---------|
-| `title` | 10× | Document title + section path |
-| `section_path` | 8× | Heading hierarchy (e.g., "Settlement > DVP Mechanics") |
-| `tags` | 7× | Comma-separated tags from frontmatter |
-| `category` | 5× | Document category |
-| `searchable_content` | 1× | Chunk text + aliases + answers + keywords + source path |
+| Column | Weight | Source |
+|--------|--------|--------|
+| `title` | 10× | Document title + section heading |
+| `section_path` | 8× | Heading hierarchy ("Doc Title > Section") |
+| `tags` | 7× | Frontmatter tags |
+| `category` | 5× | Frontmatter category or parent directory |
+| `searchable_content` | 1× | Chunk text + aliases + answers + description + tags + source path |
 
-Tokenizer: `porter unicode61 remove_diacritics 2`.
+BM25 parameters: SQLite defaults (k1=1.2, b=0.75).
+
+### Tokenizer
+
+`porter unicode61 remove_diacritics 2`
+
+- Porter stemmer handles English inflections (deploy/deployment/deploying)
+- Unicode61 with Latin diacritics removal (José → jose)
+- Case folding (API → api)
+- Compound term expansion on queries: camelCase, snake_case, hyphens, dots
 
 ### Query processing
 
-- Expands camelCase/snake_case: `orderMatchingEngine` → `[order, matching, engine]`
-- Single words with 3+ chars get prefix fallback: `word` → `[word, word*]`
-- Escapes FTS5 special chars: `"*()+-^:`
+1. Strip FTS5 special characters: `"*()+-^:`
+2. Wrap each term in double quotes for literal matching
+3. Expand compound terms (camelCase/snake_case/hyphens/dots)
+4. Single words ≥ 3 chars get prefix fallback: `"word"` → `"word"*`
+5. Execute cascade (AND → NEAR → OR)
 
 ### Deduplication
 
-Keeps best chunk per document (highest BM25 score).
+Keeps only the highest-scoring chunk per document.
 
 ### Relation re-ranking
 
-Boosts scores of results that have `relates_to` links between them:
-`boosted_score = score * (1 + 0.15 * connection_count)`
+Documents with `relates_to` links to other documents in the result set get boosted:
+`score = score × (1 + 0.15 × connection_count)`
+
+Both directions count. Skipped if fewer than 2 results.
 
 ### Reciprocal Rank Fusion (search_multi)
 
-Each query runs independently. Results are merged with:
-`rrf_score = sum(1 / (60 + rank))` across all queries where the document appears. Higher score = appeared in more queries at higher ranks.
+Each query runs independently. Results merged with:
+`rrf_score = Σ(1 / (60 + rank))` per query where the document appears.
 
----
+Per-query fetch limit: `limit × 2`. Max 5 queries.
 
-## Document graph
+### searchable_content construction
 
-### Structure
+```
+[chunk content]
 
-- Bidirectional links extracted from `relates_to` frontmatter.
-- Stored in `links` table: `(source_path, target_path, relation_type)`.
-- Default relation type: `"related"`.
+Also known as: [aliases, comma-joined]
 
-### Traversal (get_related)
+Questions this document answers: [answers, pipe-joined]
 
-- Depth capped at 3 (prevents runaway traversal).
-- Deduplicates by `(related_path, relation_type, direction)`.
-- Skips self-references.
-- Cycle-safe via visited set.
+[description]
+
+Keywords: [tags, comma-joined]
+
+Source: [relative file path]
+```
+
+Only non-empty fields are included.
 
 ---
 
 ## Chunking
 
-1. Split by H2 headings (primary boundary).
-2. Pre-H2 content → preamble chunk (title ends with "— Overview").
-3. Oversized H2 sections split at H3, then H4 (max 4 heading levels).
-4. Still oversized → split at paragraph boundaries (`\n\n`).
-5. Never splits inside fenced code blocks or tables (protected ranges).
-6. Overlap: prepend `KENSO_CHUNK_OVERLAP` chars from previous chunk (skips first and preamble chunks).
-
-### searchable_content construction
-
-Each chunk's searchable content is assembled as:
-
-```
-[chunk_content]
-
-Also known as: [aliases joined by comma]
-
-Questions this document answers: [answers joined by |]
-
-[description]
-
-Keywords: [tags joined by comma]
-
-Source: [file_path]
-```
+1. Split by H2 headings (primary boundary)
+2. Content before first H2 → preamble chunk titled "Document Title — Overview" (min 50 chars, otherwise merged into first section)
+3. Sections under 20 characters are dropped
+4. Oversized H2 sections split at H3, then H4 (max heading level 4)
+5. Still oversized → split at paragraph boundaries (`\n\n`)
+6. Code blocks (` ``` `, `~~~`) and tables (`|...|`) are protected from splitting
+7. Overlap: prepend `KENSO_CHUNK_OVERLAP` chars from previous chunk (skips first and preamble chunks)
 
 ---
 
@@ -353,15 +374,13 @@ CREATE TABLE chunks (
     searchable_content TEXT,
     category TEXT,
     audience TEXT DEFAULT 'all',
-    tags TEXT,  -- JSON array
+    tags TEXT,
     content_hash TEXT,
     created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     UNIQUE (file_path, chunk_index)
 );
 ```
-
-Indexes: `idx_chunks_path` (file_path), `idx_chunks_cat` (category).
 
 **chunks_fts** — FTS5 virtual table:
 ```sql
@@ -386,10 +405,8 @@ CREATE TABLE links (
 );
 ```
 
-Indexes: `idx_links_source` (source_path), `idx_links_target` (target_path).
-
 ---
 
 ## Concurrency
 
-SQLite runs in WAL (Write-Ahead Logging) mode. Multiple readers can operate concurrently. A single writer can proceed without blocking readers. Multiple `kenso serve` instances reading the same database is safe. Concurrent writes are serialized by SQLite's WAL lock — the second writer will wait (not fail), but high-write concurrency is not a target use case.
+SQLite WAL mode. Multiple readers safe. Concurrent writes serialized by SQLite — second writer waits, doesn't fail. Multiple `kenso serve` instances reading the same database is safe.

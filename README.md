@@ -399,7 +399,8 @@ In production, place kenso behind a reverse proxy (nginx, Caddy) to add HTTPS. F
 ### kenso ingest
 
 Scan a directory for Markdown files and load them into the database.
-```
+
+```bash
 kenso ingest <path>
 ```
 
@@ -420,14 +421,16 @@ kenso ingest <path>
 ### kenso serve
 
 Start the MCP server.
-```
+
+```bash
 kenso serve
 ```
 
 ### kenso search
 
 Search documents from the command line. Returns the top 5 results with score, path, title, and highlighted snippet.
-```
+
+```bash
 kenso search <query>
 ```
 
@@ -445,6 +448,16 @@ kenso search <query>
 5. Enrich results with tags, category, and related document count
 
 </details>
+
+### kenso lint
+
+Analyze Markdown files for retrieval quality issues. Checks titles, tags, headings, preambles, links, and document structure against 18 rules that affect search quality.
+
+```bash
+kenso lint <path>              # summary with score and prioritized fixes
+kenso lint <path> --detail     # per-file violations
+kenso lint <path> --json       # JSON output for CI integration
+```
 
 ### kenso stats
 
