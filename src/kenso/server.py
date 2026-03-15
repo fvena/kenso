@@ -91,6 +91,106 @@ def _smart_preview(content: str, max_chars: int = 200) -> str:
     return result or content[:max_chars] + "..."
 
 
+def _first_sentence(content: str, max_chars: int = 200) -> str:
+    """Extract the first meaningful sentence from content."""
+    preview = _smart_preview(content, max_chars)
+    # Try to cut at first sentence boundary
+    for sep in (". ", ".\n"):
+        idx = preview.find(sep)
+        if 0 < idx < max_chars:
+            return preview[: idx + 1]
+    return preview
+
+
+def _detect_match_source(
+    query: str,
+    *,
+    title: str,
+    tags: list[str] | None,
+    section_path: str,
+    category: str | None,
+) -> str:
+    """Detect which column most likely drove the match, using simple term matching.
+
+    Checks in weight order (title 10x, section_path 8x, tags 7x, category 5x)
+    and returns the first match found. Falls back to "content".
+    """
+    terms = [t.lower() for t in query.split() if len(t) >= 2]
+    if not terms:
+        return "content"
+
+    title_lower = title.lower()
+    if any(t in title_lower for t in terms):
+        return "title"
+
+    if section_path:
+        sp_lower = section_path.lower()
+        if any(t in sp_lower for t in terms):
+            return "section_path"
+
+    if tags:
+        tags_lower = " ".join(tags).lower()
+        if any(t in tags_lower for t in terms):
+            return "tags"
+
+    if category:
+        cat_lower = category.lower()
+        if any(t in cat_lower for t in terms):
+            return "category"
+
+    return "content"
+
+
+def _build_snippet(
+    result: dict,
+    query: str,
+    match_source: str,
+    max_chars: int = 200,
+) -> str:
+    """Build a snippet that reflects the column that drove the match."""
+    content = result["content"]
+
+    if match_source == "title":
+        title = result["title"]
+        remaining = max_chars - len(title) - 3  # " — " separator
+        if remaining > 20:
+            sentence = _first_sentence(content, remaining)
+            return f"{title} — {sentence}"
+        return title[:max_chars]
+
+    if match_source == "tags":
+        tags = result.get("tags") or []
+        # Find which tags matched
+        terms = [t.lower() for t in query.split() if len(t) >= 2]
+        matching = [tag for tag in tags if any(t in tag.lower() for t in terms)]
+        prefix = f"Tags: {', '.join(matching)}"
+        remaining = max_chars - len(prefix) - 3
+        if remaining > 20:
+            sentence = _first_sentence(content, remaining)
+            return f"{prefix} — {sentence}"
+        return prefix[:max_chars]
+
+    if match_source == "section_path":
+        sp = result.get("section_path", "")
+        remaining = max_chars - len(sp) - 3
+        if remaining > 20:
+            sentence = _first_sentence(content, remaining)
+            return f"{sp} — {sentence}"
+        return sp[:max_chars]
+
+    if match_source == "category":
+        cat = result.get("category", "")
+        prefix = f"Category: {cat}"
+        remaining = max_chars - len(prefix) - 3
+        if remaining > 20:
+            sentence = _first_sentence(content, remaining)
+            return f"{prefix} — {sentence}"
+        return prefix[:max_chars]
+
+    # Default: content match — use existing behavior
+    return _smart_preview(content, max_chars)
+
+
 @mcp.tool()
 async def search_docs(
     query: str,
@@ -119,11 +219,19 @@ async def search_docs(
     for r in results:
         if r.get("corrected_query"):
             corrected_query = r["corrected_query"]
+        match_source = _detect_match_source(
+            query,
+            title=r["title"],
+            tags=r.get("tags"),
+            section_path=r.get("section_path", ""),
+            category=r.get("category"),
+        )
         item = {
             "file_path": r["file_path"],
             "title": r["title"],
             "category": r.get("category"),
-            "content_preview": _smart_preview(r["content"], preview),
+            "content_preview": _build_snippet(r, query, match_source, preview),
+            "match_source": match_source,
             "score": round(float(r["score"]), 4),
         }
         if r.get("tags"):
@@ -206,13 +314,23 @@ async def search_multi(
     ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
 
     items = []
+    # For multi-query, use combined terms for match detection
+    combined_query = " ".join(queries)
     for fp, rrf_score in ranked[:limit]:
         r = best_result[fp]
+        match_source = _detect_match_source(
+            combined_query,
+            title=r["title"],
+            tags=r.get("tags"),
+            section_path=r.get("section_path", ""),
+            category=r.get("category"),
+        )
         item = {
             "file_path": fp,
             "title": r["title"],
             "category": r.get("category"),
-            "content_preview": _smart_preview(r["content"], preview),
+            "content_preview": _build_snippet(r, combined_query, match_source, preview),
+            "match_source": match_source,
             "score": round(rrf_score, 4),
         }
         if r.get("tags"):

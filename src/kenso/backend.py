@@ -560,7 +560,8 @@ class Backend:
         sql = (
             "SELECT c.file_path, c.title, c.content, c.category, "
             "  bm25(chunks_fts, 10.0, 8.0, 7.0, 5.0, 1.0) AS score, "
-            "  snippet(chunks_fts, 4, '<mark>', '</mark>', '...', 32) AS highlight "
+            "  snippet(chunks_fts, 4, '<mark>', '</mark>', '...', 32) AS highlight, "
+            "  c.section_path "
             "FROM chunks_fts f "
             "JOIN chunks c ON c.id = f.rowid "
             "WHERE chunks_fts MATCH ? "
@@ -583,6 +584,7 @@ class Backend:
                 "category": r[3],
                 "score": -float(r[4]),
                 "highlight": r[5],
+                "section_path": r[6] or "",
             }
             for r in rows
         ]
@@ -594,7 +596,7 @@ class Backend:
         category: str | None = None,
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        sql = "SELECT file_path, title, content, category FROM chunks WHERE file_path LIKE ? "
+        sql = "SELECT file_path, title, content, category, section_path FROM chunks WHERE file_path LIKE ? "
         params: list[Any] = [f"%{query}%"]
         if category:
             sql += "AND category = ? "
@@ -611,6 +613,7 @@ class Backend:
                 "category": r[3],
                 "score": 0.5,
                 "highlight": None,
+                "section_path": r[4] or "",
             }
             for r in rows
         ]
