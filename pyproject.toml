@@ -1,0 +1,106 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kenso"
+version = "0.1.0"
+description = "Minimal MCP server for searchable Markdown knowledge bases (SQLite FTS5)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Francisco Vena" }]
+keywords = ["mcp", "search", "markdown", "knowledge-base", "sqlite", "fts5"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Typing :: Typed",
+]
+dependencies = [
+    "mcp>=1.20",
+    "aiosqlite>=0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "mypy>=1.13",
+    "types-PyYAML>=6.0",
+    "ruff>=0.8",
+    "python-semantic-release>=9.0",
+    "pre-commit",
+]
+yaml = [
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/fvena/kenso"
+Repository = "https://github.com/fvena/kenso"
+Issues = "https://github.com/fvena/kenso/issues"
+
+[project.scripts]
+kenso = "kenso.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kenso"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["kenso.config", "kenso.schema"]
+disallow_untyped_defs = true
+
+[tool.coverage.run]
+source = ["kenso"]
+omit = [
+    "src/kenso/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 75
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["src/kenso/__init__.py:__version__"]
+branch = "main"
+commit_message = "chore(release): v{version}"
+build_command = "pip install hatch && hatch build"
+tag_format = "v{version}"
+
+[tool.semantic_release.changelog]
+template_dir = false
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "perf", "refactor", "docs", "style", "test", "build", "ci", "chore"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf", "refactor"]
