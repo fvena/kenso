@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kenso": {
+      "command": "kenso",
+      "args": ["serve"]
+    }
+  }
+}
