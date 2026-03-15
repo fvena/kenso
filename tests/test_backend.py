@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from kenso.backend import Backend, _expand_compound_word, _to_fts5_queries
+from kenso.backend import (
+    Backend,
+    _expand_compound_terms,
+    _expand_compound_word,
+    _to_fts5_queries,
+)
 from kenso.config import KensoConfig
 
 # ── Helper functions ─────────────────────────────────────────────────
@@ -34,6 +39,59 @@ class TestExpandCompoundWord:
         result = _expand_compound_word("_prefix")
         assert "_prefix" in result
 
+    def test_hyphen_compound(self):
+        result = _expand_compound_word("pre-commit")
+        assert "pre-commit" in result
+        assert "pre" in result
+        assert "commit" in result
+
+    def test_hyphen_short_word_no_split(self):
+        """Short words like 'e-' shouldn't split."""
+        result = _expand_compound_word("e-x")
+        assert result == ["e-x"]
+
+    def test_dot_compound(self):
+        result = _expand_compound_word("com.example.Class")
+        assert "com.example.Class" in result
+        assert "com" in result
+        assert "example" in result
+        assert "class" in result
+
+    def test_slash_compound(self):
+        result = _expand_compound_word("CI/CD")
+        assert "CI/CD" in result
+        assert "ci" in result
+        assert "cd" in result
+
+    def test_version_number_no_split(self):
+        result = _expand_compound_word("3.11")
+        assert result == ["3.11"]
+
+    def test_ip_address_no_split(self):
+        result = _expand_compound_word("192.168.1.1")
+        assert result == ["192.168.1.1"]
+
+
+class TestExpandCompoundTerms:
+    def test_extracts_compound_parts(self):
+        result = _expand_compound_terms("The orderMatchingEngine handles trades")
+        assert "order" in result
+        assert "matching" in result
+        assert "engine" in result
+
+    def test_plain_text_no_expansion(self):
+        result = _expand_compound_terms("simple plain words here")
+        assert result == ""
+
+    def test_hyphen_expansion(self):
+        result = _expand_compound_terms("Use pre-commit hooks")
+        assert "pre" in result
+        assert "commit" in result
+
+    def test_deduplicates(self):
+        result = _expand_compound_terms("orderMatching and orderMatching again")
+        assert result.count("order") == 1
+
 
 class TestToFts5Queries:
     def test_empty_input(self):
@@ -60,8 +118,20 @@ class TestToFts5Queries:
         assert any("NEAR" in q for q in queries)
 
     def test_five_words_no_near(self):
-        queries = _to_fts5_queries("a b c d e")
+        queries = _to_fts5_queries("alpha beta gamma delta epsilon")
         assert not any("NEAR" in q for q in queries)
+
+    def test_stop_words_filtered(self):
+        q1 = _to_fts5_queries("How do I configure logging")
+        q2 = _to_fts5_queries("configure logging")
+        assert q1 == q2
+
+    def test_all_stop_words_kept(self):
+        """A query of only stop words should NOT be filtered to empty."""
+        queries = _to_fts5_queries("how do I")
+        assert queries != ['""']
+        # All words should be kept since they're all stop words
+        assert any("how" in q.lower() for q in queries)
 
 
 # ── Backend with in-memory SQLite ────────────────────────────────────
@@ -89,7 +159,13 @@ class TestBackendSearch:
     async def test_search_finds_document(self, backend):
         await backend.ingest_file(
             "test.md",
-            [{"title": "Test Doc", "content": "Settlement lifecycle overview", "section_path": "Test"}],
+            [
+                {
+                    "title": "Test Doc",
+                    "content": "Settlement lifecycle overview",
+                    "section_path": "Test",
+                }
+            ],
             title="Test Doc",
             category="finance",
             audience="all",
@@ -102,12 +178,16 @@ class TestBackendSearch:
         await backend.ingest_file(
             "a.md",
             [{"title": "A", "content": "Python programming guide", "section_path": "A"}],
-            title="A", category="tech", audience="all",
+            title="A",
+            category="tech",
+            audience="all",
         )
         await backend.ingest_file(
             "b.md",
             [{"title": "B", "content": "Python snake species", "section_path": "B"}],
-            title="B", category="biology", audience="all",
+            title="B",
+            category="biology",
+            audience="all",
         )
         results = await backend.search("python", category="tech")
         assert all(r["category"] == "tech" for r in results)
@@ -116,7 +196,9 @@ class TestBackendSearch:
         await backend.ingest_file(
             "a.md",
             [{"title": "A", "content": "Testing content here", "section_path": "A"}],
-            title="A", category="cat1", audience="all",
+            title="A",
+            category="cat1",
+            audience="all",
         )
         results = await backend.search("testing", category="all")
         assert len(results) >= 1
@@ -125,7 +207,9 @@ class TestBackendSearch:
         await backend.ingest_file(
             "guides/setup.md",
             [{"title": "Setup", "content": "How to set up the project", "section_path": "Setup"}],
-            title="Setup", category="guides", audience="all",
+            title="Setup",
+            category="guides",
+            audience="all",
         )
         results = await backend.search("guides/setup.md")
         assert len(results) >= 1
@@ -153,13 +237,19 @@ class TestBackendGetDoc:
         await backend.ingest_file(
             "a.md",
             [{"title": "A", "content": "Content A", "section_path": "A"}],
-            title="A", category="general", audience="all",
+            title="A",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
             "b.md",
-            [{"title": "B", "content": "Content B1", "section_path": "B"},
-             {"title": "B", "content": "Content B2", "section_path": "B"}],
-            title="B", category="general", audience="all",
+            [
+                {"title": "B", "content": "Content B1", "section_path": "B"},
+                {"title": "B", "content": "Content B2", "section_path": "B"},
+            ],
+            title="B",
+            category="general",
+            audience="all",
         )
         docs = await backend.list_docs()
         assert len(docs) == 2
@@ -170,12 +260,18 @@ class TestBackendGetDoc:
 class TestBackendLinks:
     async def test_insert_and_get_related(self, backend):
         await backend.ingest_file(
-            "a.md", [{"title": "A", "content": "content a", "section_path": "A"}],
-            title="A", category="general", audience="all",
+            "a.md",
+            [{"title": "A", "content": "content a", "section_path": "A"}],
+            title="A",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
-            "b.md", [{"title": "B", "content": "content b", "section_path": "B"}],
-            title="B", category="general", audience="all",
+            "b.md",
+            [{"title": "B", "content": "content b", "section_path": "B"}],
+            title="B",
+            category="general",
+            audience="all",
         )
         await backend.insert_links("a.md", ["b.md"], "related")
         related = await backend.get_related("a.md")
@@ -184,12 +280,18 @@ class TestBackendLinks:
 
     async def test_typed_links(self, backend):
         await backend.ingest_file(
-            "a.md", [{"title": "A", "content": "content", "section_path": "A"}],
-            title="A", category="general", audience="all",
+            "a.md",
+            [{"title": "A", "content": "content", "section_path": "A"}],
+            title="A",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
-            "b.md", [{"title": "B", "content": "content", "section_path": "B"}],
-            title="B", category="general", audience="all",
+            "b.md",
+            [{"title": "B", "content": "content", "section_path": "B"}],
+            title="B",
+            category="general",
+            audience="all",
         )
         await backend.insert_typed_links("a.md", [("b.md", "feeds_into")])
         related = await backend.get_related("a.md")
@@ -197,16 +299,25 @@ class TestBackendLinks:
 
     async def test_get_related_depth_2(self, backend):
         await backend.ingest_file(
-            "a.md", [{"title": "A", "content": "content", "section_path": "A"}],
-            title="A", category="general", audience="all",
+            "a.md",
+            [{"title": "A", "content": "content", "section_path": "A"}],
+            title="A",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
-            "b.md", [{"title": "B", "content": "content", "section_path": "B"}],
-            title="B", category="general", audience="all",
+            "b.md",
+            [{"title": "B", "content": "content", "section_path": "B"}],
+            title="B",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
-            "c.md", [{"title": "C", "content": "content", "section_path": "C"}],
-            title="C", category="general", audience="all",
+            "c.md",
+            [{"title": "C", "content": "content", "section_path": "C"}],
+            title="C",
+            category="general",
+            audience="all",
         )
         await backend.insert_links("a.md", ["b.md"])
         await backend.insert_links("b.md", ["c.md"])
@@ -217,16 +328,25 @@ class TestBackendLinks:
 
     async def test_get_related_with_type_filter(self, backend):
         await backend.ingest_file(
-            "a.md", [{"title": "A", "content": "content", "section_path": "A"}],
-            title="A", category="general", audience="all",
+            "a.md",
+            [{"title": "A", "content": "content", "section_path": "A"}],
+            title="A",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
-            "b.md", [{"title": "B", "content": "content", "section_path": "B"}],
-            title="B", category="general", audience="all",
+            "b.md",
+            [{"title": "B", "content": "content", "section_path": "B"}],
+            title="B",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
-            "c.md", [{"title": "C", "content": "content", "section_path": "C"}],
-            title="C", category="general", audience="all",
+            "c.md",
+            [{"title": "C", "content": "content", "section_path": "C"}],
+            title="C",
+            category="general",
+            audience="all",
         )
         await backend.insert_typed_links("a.md", [("b.md", "triggers"), ("c.md", "feeds_into")])
         related = await backend.get_related("a.md", relation_type="triggers")
@@ -243,9 +363,13 @@ class TestBackendStats:
     async def test_stats_with_data(self, backend):
         await backend.ingest_file(
             "a.md",
-            [{"title": "A", "content": "chunk1 content", "section_path": "A"},
-             {"title": "A", "content": "chunk2 content", "section_path": "A"}],
-            title="A", category="cat", audience="all",
+            [
+                {"title": "A", "content": "chunk1 content", "section_path": "A"},
+                {"title": "A", "content": "chunk2 content", "section_path": "A"},
+            ],
+            title="A",
+            category="cat",
+            audience="all",
         )
         stats = await backend.stats()
         assert stats["docs"] == 1
@@ -257,18 +381,42 @@ class TestBackendReranking:
     async def test_rerank_boosts_connected_docs(self, backend):
         await backend.ingest_file(
             "a.md",
-            [{"title": "A", "content": "Settlement lifecycle overview document", "section_path": "A"}],
-            title="A", category="finance", audience="all",
+            [
+                {
+                    "title": "A",
+                    "content": "Settlement lifecycle overview document",
+                    "section_path": "A",
+                }
+            ],
+            title="A",
+            category="finance",
+            audience="all",
         )
         await backend.ingest_file(
             "b.md",
-            [{"title": "B", "content": "Settlement clearing process details", "section_path": "B"}],
-            title="B", category="finance", audience="all",
+            [
+                {
+                    "title": "B",
+                    "content": "Settlement clearing process details",
+                    "section_path": "B",
+                }
+            ],
+            title="B",
+            category="finance",
+            audience="all",
         )
         await backend.ingest_file(
             "c.md",
-            [{"title": "C", "content": "Settlement compliance reporting info", "section_path": "C"}],
-            title="C", category="finance", audience="all",
+            [
+                {
+                    "title": "C",
+                    "content": "Settlement compliance reporting info",
+                    "section_path": "C",
+                }
+            ],
+            title="C",
+            category="finance",
+            audience="all",
         )
         # Link a -> b (connected docs should get boosted)
         await backend.insert_links("a.md", ["b.md"])
@@ -282,8 +430,16 @@ class TestBackendReranking:
     async def test_rerank_single_result_no_boost(self, backend):
         await backend.ingest_file(
             "only.md",
-            [{"title": "Only", "content": "Unique document with special content", "section_path": "Only"}],
-            title="Only", category="general", audience="all",
+            [
+                {
+                    "title": "Only",
+                    "content": "Unique document with special content",
+                    "section_path": "Only",
+                }
+            ],
+            title="Only",
+            category="general",
+            audience="all",
         )
         results = await backend.search("unique special")
         # Should work fine with a single result (no reranking needed)
@@ -293,16 +449,25 @@ class TestBackendReranking:
 class TestBackendListCategories:
     async def test_list_categories(self, backend):
         await backend.ingest_file(
-            "a.md", [{"title": "A", "content": "c1", "section_path": "A"}],
-            title="A", category="tech", audience="all",
+            "a.md",
+            [{"title": "A", "content": "c1", "section_path": "A"}],
+            title="A",
+            category="tech",
+            audience="all",
         )
         await backend.ingest_file(
-            "b.md", [{"title": "B", "content": "c1", "section_path": "B"}],
-            title="B", category="tech", audience="all",
+            "b.md",
+            [{"title": "B", "content": "c1", "section_path": "B"}],
+            title="B",
+            category="tech",
+            audience="all",
         )
         await backend.ingest_file(
-            "c.md", [{"title": "C", "content": "c1", "section_path": "C"}],
-            title="C", category="science", audience="all",
+            "c.md",
+            [{"title": "C", "content": "c1", "section_path": "C"}],
+            title="C",
+            category="science",
+            audience="all",
         )
         cats = await backend.list_categories()
         assert len(cats) == 2
@@ -317,12 +482,18 @@ class TestBackendListCategories:
 class TestBackendStatsWithLinks:
     async def test_stats_includes_link_count(self, backend):
         await backend.ingest_file(
-            "a.md", [{"title": "A", "content": "content", "section_path": "A"}],
-            title="A", category="general", audience="all",
+            "a.md",
+            [{"title": "A", "content": "content", "section_path": "A"}],
+            title="A",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
-            "b.md", [{"title": "B", "content": "content", "section_path": "B"}],
-            title="B", category="general", audience="all",
+            "b.md",
+            [{"title": "B", "content": "content", "section_path": "B"}],
+            title="B",
+            category="general",
+            audience="all",
         )
         await backend.insert_links("a.md", ["b.md"])
         stats = await backend.stats()
@@ -360,7 +531,9 @@ class TestBackendIngestFile:
         await backend.ingest_file(
             "test.md",
             [{"title": "Test", "content": "Content here", "section_path": "Test"}],
-            title="Test", category="general", audience="all",
+            title="Test",
+            category="general",
+            audience="all",
             content_hash="abc123",
         )
         h = await backend.get_content_hash("test.md")
@@ -370,7 +543,9 @@ class TestBackendIngestFile:
         await backend.ingest_file(
             "test.md",
             [{"title": "Test", "content": "Main content", "section_path": "Test"}],
-            title="Test", category="general", audience="all",
+            title="Test",
+            category="general",
+            audience="all",
             aliases=["alt name", "other name"],
         )
         results = await backend.search("alt name")
@@ -380,7 +555,9 @@ class TestBackendIngestFile:
         await backend.ingest_file(
             "test.md",
             [{"title": "Test", "content": "Content", "section_path": "Test"}],
-            title="Test", category="general", audience="all",
+            title="Test",
+            category="general",
+            audience="all",
             tags=["python", "testing"],
         )
         doc = await backend.get_doc("test.md")
@@ -390,7 +567,9 @@ class TestBackendIngestFile:
         await backend.ingest_file(
             "test.md",
             [{"title": "Test", "content": "Main content", "section_path": "Test"}],
-            title="Test", category="general", audience="all",
+            title="Test",
+            category="general",
+            audience="all",
             description="A description of the document",
         )
         results = await backend.search("description document")
@@ -400,7 +579,9 @@ class TestBackendIngestFile:
         await backend.ingest_file(
             "test.md",
             [{"title": "Test", "content": "Content about process", "section_path": "Test"}],
-            title="Test", category="general", audience="all",
+            title="Test",
+            category="general",
+            audience="all",
             answers=["How does the process work?"],
         )
         results = await backend.search("how does process work")
@@ -410,12 +591,16 @@ class TestBackendIngestFile:
         await backend.ingest_file(
             "test.md",
             [{"title": "V1", "content": "Version one content here", "section_path": "V1"}],
-            title="V1", category="general", audience="all",
+            title="V1",
+            category="general",
+            audience="all",
         )
         await backend.ingest_file(
             "test.md",
             [{"title": "V2", "content": "Version two content here", "section_path": "V2"}],
-            title="V2", category="general", audience="all",
+            title="V2",
+            category="general",
+            audience="all",
         )
         doc = await backend.get_doc("test.md")
         assert len(doc) == 1
@@ -424,11 +609,19 @@ class TestBackendIngestFile:
     async def test_ingest_multiple_chunks(self, backend):
         chunks = [
             {"title": "Chunk 1", "content": "First chunk content", "section_path": "Doc > Part 1"},
-            {"title": "Chunk 2", "content": "Second chunk content", "section_path": "Doc > Part 2"},
+            {
+                "title": "Chunk 2",
+                "content": "Second chunk content",
+                "section_path": "Doc > Part 2",
+            },
             {"title": "Chunk 3", "content": "Third chunk content", "section_path": "Doc > Part 3"},
         ]
         count = await backend.ingest_file(
-            "multi.md", chunks, title="Multi", category="general", audience="all",
+            "multi.md",
+            chunks,
+            title="Multi",
+            category="general",
+            audience="all",
         )
         assert count == 3
         doc = await backend.get_doc("multi.md")
@@ -439,14 +632,112 @@ class TestBackendSearchFilePath:
     async def test_file_path_search_with_category(self, backend):
         await backend.ingest_file(
             "guides/setup.md",
-            [{"title": "Setup", "content": "Setup instructions for the project", "section_path": "Setup"}],
-            title="Setup", category="guides", audience="all",
+            [
+                {
+                    "title": "Setup",
+                    "content": "Setup instructions for the project",
+                    "section_path": "Setup",
+                }
+            ],
+            title="Setup",
+            category="guides",
+            audience="all",
         )
         await backend.ingest_file(
             "guides/deploy.md",
-            [{"title": "Deploy", "content": "Deploy instructions for production", "section_path": "Deploy"}],
-            title="Deploy", category="ops", audience="all",
+            [
+                {
+                    "title": "Deploy",
+                    "content": "Deploy instructions for production",
+                    "section_path": "Deploy",
+                }
+            ],
+            title="Deploy",
+            category="ops",
+            audience="all",
         )
         # File path search should respect category filter
         results = await backend.search("guides/setup.md", category="guides")
         assert len(results) >= 1
+
+
+class TestCompoundTermExpansionSearch:
+    async def test_camel_case_content_findable_by_parts(self, backend):
+        """Verify 'orderMatchingEngine' in content is findable by 'order matching'."""
+        await backend.ingest_file(
+            "engine.md",
+            [
+                {
+                    "title": "Engine",
+                    "content": "The orderMatchingEngine processes trades",
+                    "section_path": "Engine",
+                }
+            ],
+            title="Engine",
+            category="tech",
+            audience="all",
+        )
+        results = await backend.search("order matching")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "engine.md"
+
+    async def test_hyphen_content_findable_by_part(self, backend):
+        """Verify 'pre-commit' in content is findable by searching 'commit'."""
+        await backend.ingest_file(
+            "hooks.md",
+            [
+                {
+                    "title": "Hooks",
+                    "content": "Configure pre-commit hooks for linting",
+                    "section_path": "Hooks",
+                }
+            ],
+            title="Hooks",
+            category="tech",
+            audience="all",
+        )
+        results = await backend.search("commit")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "hooks.md"
+
+    async def test_dot_compound_findable(self, backend):
+        """Verify 'com.example.MyClass' is findable by searching 'MyClass'."""
+        await backend.ingest_file(
+            "java.md",
+            [
+                {
+                    "title": "Java",
+                    "content": "Import com.example.MyClass for usage",
+                    "section_path": "Java",
+                }
+            ],
+            title="Java",
+            category="tech",
+            audience="all",
+        )
+        results = await backend.search("MyClass")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "java.md"
+
+
+class TestStopWordSearchIntegration:
+    async def test_question_style_same_as_keywords(self, backend):
+        """'How do I configure logging' should produce same results as 'configure logging'."""
+        await backend.ingest_file(
+            "config.md",
+            [
+                {
+                    "title": "Config",
+                    "content": "Guide to configure logging in the application",
+                    "section_path": "Config",
+                }
+            ],
+            title="Config",
+            category="tech",
+            audience="all",
+        )
+        r1 = await backend.search("How do I configure logging")
+        r2 = await backend.search("configure logging")
+        paths1 = [r["file_path"] for r in r1]
+        paths2 = [r["file_path"] for r in r2]
+        assert paths1 == paths2

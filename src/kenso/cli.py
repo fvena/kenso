@@ -55,18 +55,28 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         total_chunks = sum(r.chunks for r in results)
 
         for r in results:
-            status = {"ingested": "✓", "unchanged": "–", "skipped": "⊘",
-                      "error": "✗"}.get(r.action, "?")
+            status = {"ingested": "✓", "unchanged": "–", "skipped": "⊘", "error": "✗"}.get(
+                r.action, "?"
+            )
             line = f"  {status} {r.path} ({r.chunks} chunks)"
             if r.detail:
                 line += f" [{r.detail}]"
             print(line)
 
-        print(f"\n  {len(results)} files: {counts.get('ingested', 0)} ingested, "
-              f"{counts.get('unchanged', 0)} unchanged, "
-              f"{counts.get('skipped', 0)} skipped, "
-              f"{counts.get('error', 0)} errors. "
-              f"Total: {total_chunks} chunks.")
+        print(
+            f"\n  {len(results)} files: {counts.get('ingested', 0)} ingested, "
+            f"{counts.get('unchanged', 0)} unchanged, "
+            f"{counts.get('skipped', 0)} skipped, "
+            f"{counts.get('error', 0)} errors. "
+            f"Total: {total_chunks} chunks."
+        )
+
+        if counts.get("unchanged", 0) > 0:
+            print(
+                "\n  Note: Unchanged files were not re-ingested. Re-ingest with"
+                " updated content to enable compound term expansion for"
+                " improved search."
+            )
 
     asyncio.run(_run())
 
@@ -121,7 +131,9 @@ def cmd_stats(args: argparse.Namespace) -> None:
             print(f"  Links:     {s['links'] or 0}")
             print(f"  {'─' * 40}")
             for cat in s["categories"]:
-                print(f"    {cat['cat'] or '(none)':<20} {cat['docs']} docs, {cat['chunks']} chunks")
+                print(
+                    f"    {cat['cat'] or '(none)':<20} {cat['docs']} docs, {cat['chunks']} chunks"
+                )
             print()
         finally:
             await backend.shutdown()
@@ -137,7 +149,9 @@ def _configure_logging(log_level: str = "INFO") -> None:
 
 def main() -> None:
     _configure_logging(os.environ.get("KENSO_LOG_LEVEL", "INFO"))
-    parser = argparse.ArgumentParser(prog="kenso", description="Markdown knowledge base for AI agents")
+    parser = argparse.ArgumentParser(
+        prog="kenso", description="Markdown knowledge base for AI agents"
+    )
     parser.add_argument("--version", action="version", version=f"kenso {__version__}")
     sub = parser.add_subparsers(dest="command")
 

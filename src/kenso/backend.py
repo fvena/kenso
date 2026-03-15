@@ -11,32 +11,149 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from kenso.config import KensoConfig
 
-__all__ = ["Backend"]
+__all__ = ["Backend", "STOP_WORDS"]
 
 log = logging.getLogger("kenso")
 
 _FTS5_SPECIAL = re.compile(r'["\*\(\)\-\+\^:]')
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+_VERSION_OR_NUMBER = re.compile(r"^\d[\d.]*$")
+_IP_ADDRESS = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+# Compound-word pattern: contains camelCase boundary, underscore, hyphen, dot, or slash
+_COMPOUND_PATTERN = re.compile(r"[_/]|[a-z][A-Z]|[A-Z]{2}[a-z]|(?<=[a-zA-Z])[-.](?=[a-zA-Z])")
+
+STOP_WORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "can",
+        "may",
+        "might",
+        "shall",
+        "how",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "it",
+        "i",
+        "my",
+        "we",
+        "our",
+        "you",
+        "your",
+        "they",
+        "their",
+        "this",
+        "that",
+        "these",
+        "those",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "from",
+        "by",
+        "about",
+        "and",
+        "or",
+        "not",
+        "but",
+        "if",
+        "so",
+    }
+)
 
 
 def _expand_compound_word(word: str) -> list[str]:
-    """Split camelCase or snake_case words into components.
+    """Split compound words (camelCase, snake_case, hyphen, dot, slash) into components.
 
     Returns the original word plus its parts, e.g.:
       "orderMatchingEngine" → ["orderMatchingEngine", "order", "matching", "engine"]
       "order_matching"      → ["order_matching", "order", "matching"]
+      "pre-commit"          → ["pre-commit", "pre", "commit"]
+      "com.example.Class"   → ["com.example.Class", "com", "example", "class"]
     Plain words return as-is: ["hello"].
     """
+    # Skip version numbers and IP addresses
+    if _VERSION_OR_NUMBER.match(word) or _IP_ADDRESS.match(word):
+        return [word]
+
     # snake_case
     if "_" in word:
         parts = [p for p in word.split("_") if p]
         if len(parts) > 1:
-            return [word] + parts
+            return [word] + [p.lower() for p in parts]
+
+    # Slash-separated (e.g. "CI/CD")
+    if "/" in word:
+        parts = [p for p in word.split("/") if p]
+        if len(parts) > 1:
+            return [word] + [p.lower() for p in parts]
+
+    # Dot-separated (e.g. "com.example.Class") — but not version numbers
+    if "." in word and not _VERSION_OR_NUMBER.match(word):
+        parts = [p for p in word.split(".") if p]
+        if len(parts) > 1:
+            return [word] + [p.lower() for p in parts]
+
+    # Hyphen-separated (e.g. "pre-commit") — skip short segments
+    if "-" in word and len(word) >= 4:
+        parts = [p for p in word.split("-") if p]
+        if len(parts) > 1 and all(len(p) >= 2 for p in parts):
+            return [word] + [p.lower() for p in parts]
+
     # camelCase / PascalCase
     parts = _CAMEL_SPLIT.split(word)
     if len(parts) > 1:
         return [word] + [p.lower() for p in parts]
     return [word]
+
+
+def _expand_compound_terms(text: str) -> str:
+    """Find compound terms in text and return space-separated expansions.
+
+    Only expands words that contain camelCase boundaries, underscores,
+    hyphens (in words ≥4 chars), dots, or slashes.
+    """
+    seen: set[str] = set()
+    expansions: list[str] = []
+    for word in text.split():
+        # Strip common punctuation for matching
+        clean = word.strip(".,;:!?()[]{}\"'`")
+        if not clean or not _COMPOUND_PATTERN.search(clean):
+            continue
+        parts = _expand_compound_word(clean)
+        # parts[0] is the original; parts[1:] are the components
+        for p in parts[1:]:
+            lower = p.lower()
+            if lower not in seen:
+                seen.add(lower)
+                expansions.append(lower)
+    return " ".join(expansions)
 
 
 def _to_fts5_queries(text: str) -> list[str]:
@@ -48,6 +165,11 @@ def _to_fts5_queries(text: str) -> list[str]:
     words = text.split()
     if not words:
         return ['""']
+
+    # Filter stop words (keep all if everything is a stop word)
+    filtered = [w for w in words if w.lower() not in STOP_WORDS]
+    if filtered:
+        words = filtered
 
     # Expand camelCase / snake_case words into components
     expanded: list[str] = []
@@ -526,6 +648,10 @@ class Backend:
             if tags:
                 sc_parts.append(f"Keywords: {', '.join(tags)}")
             sc_parts.append(f"Source: {rel_path}")
+            # Expand compound terms so component words are searchable
+            expanded = _expand_compound_terms(chunk["content"])
+            if expanded:
+                sc_parts.append(f"Expanded terms: {expanded}")
             searchable_content = "\n\n".join(sc_parts)
 
             cols = "file_path, chunk_index, title, section_path, content, searchable_content, category, audience"
