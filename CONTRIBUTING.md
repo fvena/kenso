@@ -5,54 +5,90 @@ Thanks for your interest in contributing to kenso! This guide will help you get 
 ## Development Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/fvena/kenso.git
 cd kenso
-
-# Create a virtual environment
 python -m venv .venv
 source .venv/bin/activate
-
-# Install with dev dependencies
 pip install -e ".[dev,yaml]"
-
-# Install pre-commit hooks
 pre-commit install --hook-type commit-msg
 ```
 
-## Running Tests
+The `-e` (editable) install means the `kenso` command now points to your local source code. Any change you save is immediately available — no reinstall needed.
+
+## Try Your Changes
+
+Create a small test knowledge base to work with:
 
 ```bash
-# Run all tests
-pytest
+mkdir -p /tmp/kenso-dev/docs
+cat > /tmp/kenso-dev/docs/example.md << 'EOF'
+---
+title: Deployment Pipeline
+category: infrastructure
+tags: deploy, CI/CD, rollback
+---
 
-# Run with coverage
-pytest --cov=kenso --cov-report=term-missing
+# Deployment Pipeline
 
-# Run linter
-ruff check src/ tests/
+The deployment pipeline automates building, testing, and releasing code.
+
+## Build Stage
+
+The build stage compiles the application and runs unit tests.
+
+## Deploy Stage
+
+The deploy stage pushes artifacts to production using blue-green deployment.
+EOF
+```
+
+Then test the full workflow:
+
+```bash
+kenso ingest /tmp/kenso-dev/docs/   # index the files
+kenso search "deployment"           # test search
+kenso search "rollback"             # test tag matching
+kenso stats                         # check index contents
+```
+
+For changes to search or ranking, run the eval harness:
+
+```bash
+python tests/eval/eval_harness.py
+python tests/eval/eval_harness.py --compare baseline
+```
+
+## Running the Test Suite
+
+```bash
+pytest                                          # all tests
+pytest tests/test_ingest.py                     # single module
+pytest tests/test_backend.py -k "test_search"   # single test
+pytest --cov=kenso --cov-report=term-missing    # with coverage
 ```
 
 ## Code Style
 
-- **Linter**: [Ruff](https://docs.astral.sh/ruff/) handles linting and import sorting
-- **Line length**: 99 characters
-- **Target**: Python 3.11+
-- **Type hints**: use `from __future__ import annotations` in all modules
+This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and import sorting.
 
-Run `ruff check src/ tests/` before committing. The CI pipeline will catch any issues.
+```bash
+ruff check src/ tests/       # lint
+ruff check src/ tests/ --fix # lint and auto-fix
+```
+
+Conventions: 99 character line length, Python 3.11+, `from __future__ import annotations` in all modules.
 
 ## Commit Messages
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/) to automate versioning and changelog generation.
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) to automate versioning and changelog generation. A pre-commit hook validates the format automatically.
 
 Format: `<type>(<scope>): <description>`
 
 | Type | When to use |
 |------|-------------|
-| `feat` | New feature (triggers minor version bump) |
-| `fix` | Bug fix (triggers patch version bump) |
-| `perf` | Performance improvement (triggers patch bump) |
+| `feat` | New feature (minor version bump) |
+| `fix` | Bug fix (patch version bump) |
+| `perf` | Performance improvement (patch bump) |
 | `refactor` | Code change that neither fixes a bug nor adds a feature |
 | `docs` | Documentation only |
 | `test` | Adding or updating tests |
@@ -68,21 +104,19 @@ docs: add editor integration examples for VS Code
 test(backend): add unit tests for deduplication logic
 ```
 
-A pre-commit hook validates your commit message format automatically.
+## Pull Requests
 
-## Pull Request Process
+1. Fork the repository and create a feature branch from `main`
+2. Write tests for any new functionality
+3. Ensure all tests pass and linting is clean
+4. Keep commits atomic — one logical change per commit
+5. Write a clear PR description explaining what and why
 
-1. **Fork** the repository and create a feature branch from `main`
-2. **Write tests** for any new functionality
-3. **Ensure all tests pass** (`pytest`) and linting is clean (`ruff check src/ tests/`)
-4. **Keep commits atomic** — one logical change per commit
-5. **Write a clear PR description** explaining what and why
+Checklist:
 
-### PR Checklist
-
-- [ ] Tests added/updated for changes
-- [ ] All tests pass locally
-- [ ] Ruff linting passes
+- [ ] Tests added or updated
+- [ ] `pytest` passes
+- [ ] `ruff check src/ tests/` passes
 - [ ] Commit messages follow Conventional Commits
 - [ ] Documentation updated if needed
 
@@ -108,12 +142,7 @@ tests/
 
 ## Reporting Bugs
 
-Open an issue with:
-
-- kenso version (`kenso --version`)
-- Python version
-- Steps to reproduce
-- Expected vs. actual behavior
+Open an issue with: kenso version (`kenso --version`), Python version, steps to reproduce, and expected vs. actual behavior.
 
 ## Questions?
 
