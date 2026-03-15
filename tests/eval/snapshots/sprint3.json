@@ -1,0 +1,666 @@
+{
+  "total_queries": 36,
+  "overall": {
+    "hit_rate": 1.0,
+    "mrr": 0.9722222222222222,
+    "precision": 0.4666666666666667,
+    "ndcg": 0.970150523063981,
+    "recall": 1.0
+  },
+  "categories": [
+    {
+      "label": "chunk_ambiguity",
+      "count": 2,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.2,
+      "mean_ndcg": 1.0,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "cluster_coherence",
+      "count": 2,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.45,
+      "mean_ndcg": 0.9386076576690247,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "exact_keyword",
+      "count": 5,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.6333333333333333,
+      "mean_ndcg": 1.0,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "frontmatter_enriched",
+      "count": 6,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.3833333333333333,
+      "mean_ndcg": 1.0,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "multi_concept",
+      "count": 3,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.4000000000000001,
+      "mean_ndcg": 0.9732402630493958,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "pre_h2_content",
+      "count": 2,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.7,
+      "mean_ndcg": 1.0,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "question_style",
+      "count": 3,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.20000000000000004,
+      "mean_ndcg": 1.0,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "result_diversity",
+      "count": 3,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 0.4666666666666666,
+      "mean_ndcg": 0.9555410728913873,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "synonym",
+      "count": 7,
+      "hit_rate": 1.0,
+      "mrr": 0.8571428571428571,
+      "mean_precision": 0.34761904761904766,
+      "mean_ndcg": 0.8945513581632737,
+      "mean_recall": 1.0
+    },
+    {
+      "label": "tag_only",
+      "count": 3,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "mean_precision": 1.0,
+      "mean_ndcg": 1.0,
+      "mean_recall": 1.0
+    }
+  ],
+  "per_query": [
+    {
+      "id": "A01",
+      "category_label": "exact_keyword",
+      "query": "settlement lifecycle",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 1.0,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "post-trade/settlement-lifecycle.md"
+      ]
+    },
+    {
+      "id": "A02",
+      "category_label": "exact_keyword",
+      "query": "order matching engine",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.3333333333333333,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "order-management/matching-engine.md",
+        "architecture/platform-overview.md",
+        "market-data/feed-specification.md"
+      ]
+    },
+    {
+      "id": "A03",
+      "category_label": "exact_keyword",
+      "query": "CNMV regulatory reporting",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 1.0,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "compliance/cnmv-reporting.md"
+      ]
+    },
+    {
+      "id": "A04",
+      "category_label": "exact_keyword",
+      "query": "FIX protocol integration",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.3333333333333333,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "order-management/matching-engine.md",
+        "market-data/feed-specification.md",
+        "members/onboarding.md"
+      ]
+    },
+    {
+      "id": "A05",
+      "category_label": "exact_keyword",
+      "query": "bid-ask spread liquidity",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.5,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "market-data/liquidity-metrics.md",
+        "members/onboarding.md"
+      ]
+    },
+    {
+      "id": "B01",
+      "category_label": "synonym",
+      "query": "post-trade processing",
+      "hit": true,
+      "reciprocal_rank": 0.5,
+      "precision_at_k": 0.3333333333333333,
+      "ndcg_at_k": 0.6309297535714575,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md",
+        "post-trade/settlement-lifecycle.md",
+        "architecture/platform-overview.md"
+      ]
+    },
+    {
+      "id": "B02",
+      "category_label": "synonym",
+      "query": "login authentication token",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.5,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "architecture/api-gateway.md",
+        "architecture/platform-overview.md"
+      ]
+    },
+    {
+      "id": "B03",
+      "category_label": "synonym",
+      "query": "trading fees costs",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md",
+        "market-data/liquidity-metrics.md",
+        "post-trade/settlement-lifecycle.md",
+        "compliance/cnmv-reporting.md",
+        "compliance/market-surveillance.md"
+      ]
+    },
+    {
+      "id": "B04",
+      "category_label": "synonym",
+      "query": "outage disaster recovery",
+      "hit": true,
+      "reciprocal_rank": 0.5,
+      "precision_at_k": 0.5,
+      "ndcg_at_k": 0.6309297535714575,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md",
+        "operations/incident-management.md"
+      ]
+    },
+    {
+      "id": "B05",
+      "category_label": "synonym",
+      "query": "new participant registration",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.5,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md",
+        "order-management/matching-engine.md"
+      ]
+    },
+    {
+      "id": "B06",
+      "category_label": "synonym",
+      "query": "how trades are cleared and settled",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "post-trade/settlement-lifecycle.md",
+        "order-management/matching-engine.md",
+        "architecture/api-gateway.md",
+        "architecture/platform-overview.md",
+        "members/onboarding.md"
+      ]
+    },
+    {
+      "id": "B07",
+      "category_label": "synonym",
+      "query": "market abuse detection",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "compliance/market-surveillance.md",
+        "compliance/cnmv-reporting.md",
+        "market-data/feed-specification.md",
+        "market-data/liquidity-metrics.md",
+        "order-management/matching-engine.md"
+      ]
+    },
+    {
+      "id": "C01",
+      "category_label": "multi_concept",
+      "query": "CNMV settlement reporting requirements",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.4,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "compliance/cnmv-reporting.md",
+        "post-trade/settlement-lifecycle.md",
+        "architecture/platform-overview.md",
+        "market-data/feed-specification.md",
+        "compliance/market-surveillance.md"
+      ]
+    },
+    {
+      "id": "C02",
+      "category_label": "multi_concept",
+      "query": "matching engine architecture microservices",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.4,
+      "ndcg_at_k": 0.9197207891481876,
+      "recall": 1.0,
+      "returned_paths": [
+        "architecture/platform-overview.md",
+        "architecture/api-gateway.md",
+        "order-management/matching-engine.md",
+        "market-data/feed-specification.md",
+        "operations/incident-management.md"
+      ]
+    },
+    {
+      "id": "C03",
+      "category_label": "multi_concept",
+      "query": "market data feed order book depth",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.4,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "market-data/feed-specification.md",
+        "market-data/liquidity-metrics.md",
+        "order-management/matching-engine.md",
+        "compliance/cnmv-reporting.md",
+        "architecture/api-gateway.md"
+      ]
+    },
+    {
+      "id": "D01",
+      "category_label": "tag_only",
+      "query": "RTS25",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 1.0,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "compliance/cnmv-reporting.md"
+      ]
+    },
+    {
+      "id": "D02",
+      "category_label": "tag_only",
+      "query": "AML KYC verification",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 1.0,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md"
+      ]
+    },
+    {
+      "id": "D03",
+      "category_label": "tag_only",
+      "query": "MAR regulation",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 1.0,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "compliance/market-surveillance.md"
+      ]
+    },
+    {
+      "id": "E01",
+      "category_label": "pre_h2_content",
+      "query": "trade settlement clearing and settlement",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 1.0,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "post-trade/settlement-lifecycle.md"
+      ]
+    },
+    {
+      "id": "E02",
+      "category_label": "pre_h2_content",
+      "query": "multilateral trading facility MTF",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.4,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "order-management/matching-engine.md",
+        "post-trade/settlement-lifecycle.md",
+        "architecture/platform-overview.md",
+        "compliance/cnmv-reporting.md",
+        "compliance/market-surveillance.md"
+      ]
+    },
+    {
+      "id": "F01",
+      "category_label": "chunk_ambiguity",
+      "query": "settlement failed trade buy-in procedure",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "post-trade/settlement-lifecycle.md",
+        "operations/incident-management.md",
+        "architecture/api-gateway.md",
+        "architecture/platform-overview.md",
+        "market-data/feed-specification.md"
+      ]
+    },
+    {
+      "id": "F02",
+      "category_label": "chunk_ambiguity",
+      "query": "rate limiting API requests per second",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "architecture/api-gateway.md",
+        "market-data/feed-specification.md",
+        "order-management/matching-engine.md",
+        "members/onboarding.md",
+        "architecture/platform-overview.md"
+      ]
+    },
+    {
+      "id": "G01",
+      "category_label": "question_style",
+      "query": "what happens when a settlement fails",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "post-trade/settlement-lifecycle.md",
+        "compliance/cnmv-reporting.md",
+        "members/onboarding.md",
+        "order-management/matching-engine.md",
+        "architecture/api-gateway.md"
+      ]
+    },
+    {
+      "id": "G02",
+      "category_label": "question_style",
+      "query": "how do members connect to the trading platform",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "order-management/matching-engine.md",
+        "architecture/api-gateway.md",
+        "members/onboarding.md",
+        "compliance/market-surveillance.md",
+        "post-trade/settlement-lifecycle.md"
+      ]
+    },
+    {
+      "id": "G03",
+      "category_label": "question_style",
+      "query": "what are the incident severity levels",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "operations/incident-management.md",
+        "order-management/matching-engine.md",
+        "market-data/feed-specification.md",
+        "architecture/api-gateway.md",
+        "post-trade/settlement-lifecycle.md"
+      ]
+    },
+    {
+      "id": "H01",
+      "category_label": "frontmatter_enriched",
+      "query": "liquidaci\u00f3n de operaciones",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 1.0,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "post-trade/settlement-lifecycle.md"
+      ]
+    },
+    {
+      "id": "H02",
+      "category_label": "frontmatter_enriched",
+      "query": "trade execution engine",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "order-management/matching-engine.md",
+        "compliance/cnmv-reporting.md",
+        "operations/incident-management.md",
+        "post-trade/settlement-lifecycle.md",
+        "architecture/platform-overview.md"
+      ]
+    },
+    {
+      "id": "H03",
+      "category_label": "frontmatter_enriched",
+      "query": "login system platform",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "architecture/api-gateway.md",
+        "compliance/market-surveillance.md",
+        "compliance/cnmv-reporting.md",
+        "post-trade/settlement-lifecycle.md",
+        "operations/incident-management.md"
+      ]
+    },
+    {
+      "id": "H04",
+      "category_label": "frontmatter_enriched",
+      "query": "market access application",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md",
+        "architecture/api-gateway.md",
+        "market-data/feed-specification.md",
+        "compliance/market-surveillance.md",
+        "market-data/liquidity-metrics.md"
+      ]
+    },
+    {
+      "id": "H05",
+      "category_label": "frontmatter_enriched",
+      "query": "service disruption playbook",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.5,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "operations/incident-management.md",
+        "architecture/platform-overview.md"
+      ]
+    },
+    {
+      "id": "H06",
+      "category_label": "frontmatter_enriched",
+      "query": "what KYC documentation is required",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.2,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md",
+        "post-trade/settlement-lifecycle.md",
+        "order-management/matching-engine.md",
+        "architecture/api-gateway.md",
+        "compliance/cnmv-reporting.md"
+      ]
+    },
+    {
+      "id": "I01",
+      "category_label": "result_diversity",
+      "query": "CNMV compliance reporting settlement",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.6,
+      "ndcg_at_k": 0.9469024295259745,
+      "recall": 1.0,
+      "returned_paths": [
+        "compliance/cnmv-reporting.md",
+        "post-trade/settlement-lifecycle.md",
+        "architecture/api-gateway.md",
+        "architecture/platform-overview.md",
+        "compliance/market-surveillance.md"
+      ]
+    },
+    {
+      "id": "I02",
+      "category_label": "result_diversity",
+      "query": "platform services architecture gateway",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.4,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "architecture/platform-overview.md",
+        "architecture/api-gateway.md",
+        "operations/incident-management.md",
+        "post-trade/settlement-lifecycle.md",
+        "order-management/matching-engine.md"
+      ]
+    },
+    {
+      "id": "I03",
+      "category_label": "result_diversity",
+      "query": "member trading order access",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.4,
+      "ndcg_at_k": 0.9197207891481876,
+      "recall": 1.0,
+      "returned_paths": [
+        "members/onboarding.md",
+        "architecture/api-gateway.md",
+        "order-management/matching-engine.md",
+        "architecture/platform-overview.md",
+        "compliance/market-surveillance.md"
+      ]
+    },
+    {
+      "id": "J01",
+      "category_label": "cluster_coherence",
+      "query": "settlement process regulatory",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.4,
+      "ndcg_at_k": 0.8772153153380493,
+      "recall": 1.0,
+      "returned_paths": [
+        "post-trade/settlement-lifecycle.md",
+        "members/onboarding.md",
+        "architecture/platform-overview.md",
+        "compliance/cnmv-reporting.md",
+        "architecture/api-gateway.md"
+      ]
+    },
+    {
+      "id": "J02",
+      "category_label": "cluster_coherence",
+      "query": "surveillance compliance alerts",
+      "hit": true,
+      "reciprocal_rank": 1.0,
+      "precision_at_k": 0.5,
+      "ndcg_at_k": 1.0,
+      "recall": 1.0,
+      "returned_paths": [
+        "compliance/market-surveillance.md",
+        "compliance/cnmv-reporting.md",
+        "architecture/platform-overview.md",
+        "architecture/api-gateway.md"
+      ]
+    }
+  ]
+}
