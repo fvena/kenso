@@ -74,8 +74,12 @@ def _smart_preview(content: str, max_chars: int = 200) -> str:
     for line in lines:
         stripped = line.strip()
         # Skip headings, code fences, table rows, empty lines
-        if (stripped.startswith("#") or stripped.startswith("```") or
-                stripped.startswith("|") or not stripped):
+        if (
+            stripped.startswith("#")
+            or stripped.startswith("```")
+            or stripped.startswith("|")
+            or not stripped
+        ):
             continue
         parts.append(stripped)
         chars += len(stripped) + 1
@@ -111,7 +115,10 @@ async def search_docs(
 
     results = await ctx.backend.search(query, category=category, limit=limit)
     items = []
+    corrected_query = None
     for r in results:
+        if r.get("corrected_query"):
+            corrected_query = r["corrected_query"]
         item = {
             "file_path": r["file_path"],
             "title": r["title"],
@@ -127,8 +134,22 @@ async def search_docs(
             item["highlight"] = r["highlight"]
         items.append(item)
 
-    log.info("search: query=%r results=%d top=%s",
-             query, len(items), items[0]["file_path"] if items else None)
+    log.info(
+        "search: query=%r results=%d top=%s",
+        query,
+        len(items),
+        items[0]["file_path"] if items else None,
+    )
+
+    if corrected_query:
+        return json.dumps(
+            {
+                "corrected_query": corrected_query,
+                "original_query": query,
+                "results": items,
+            },
+            indent=2,
+        )
     return json.dumps(items, indent=2)
 
 
@@ -163,8 +184,11 @@ async def search_multi(
 
     # Run each query independently
     all_results: list[list[dict]] = []
+    corrections: dict[str, str] = {}  # original → corrected
     for q in queries:
         results = await ctx.backend.search(q, category=category, limit=limit * 2)
+        if results and results[0].get("corrected_query"):
+            corrections[q] = results[0]["corrected_query"]
         all_results.append(results)
 
     # RRF merge: combine rankings across queries
@@ -198,6 +222,15 @@ async def search_multi(
         items.append(item)
 
     log.info("search_multi: queries=%r results=%d", queries, len(items))
+
+    if corrections:
+        return json.dumps(
+            {
+                "corrections": corrections,
+                "results": items,
+            },
+            indent=2,
+        )
     return json.dumps(items, indent=2)
 
 

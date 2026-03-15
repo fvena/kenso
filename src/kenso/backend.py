@@ -352,6 +352,7 @@ class Backend:
         self._cfg = config
         self._db: Any = None
         self._db_path = config.database_url or ":memory:"
+        self._term_dict: list[str] | None = None  # Cached fuzzy-match dictionary
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -410,6 +411,15 @@ class Backend:
         if not results and ("/" in query or "." in query):
             results = await self._search_file_path(query, category=category, limit=fetch_limit)
 
+        # Fallback: fuzzy matching on typos
+        corrected_query = None
+        if not results and any(len(t) >= 3 for t in query.split()):
+            corrected_query, results = await self._fuzzy_search(
+                query,
+                category=category,
+                limit=fetch_limit,
+            )
+
         if not results:
             return []
 
@@ -425,6 +435,10 @@ class Backend:
 
         # Fix 4.4: Enrich with tags and related count
         results = await self._enrich_metadata(results)
+
+        if corrected_query:
+            for r in results:
+                r["corrected_query"] = corrected_query
 
         return results
 
@@ -600,6 +614,92 @@ class Backend:
             }
             for r in rows
         ]
+
+    # -- fuzzy matching fallback -------------------------------------------
+
+    _MAX_DICT_SIZE = 50_000
+
+    async def _build_term_dictionary(self) -> list[str]:
+        """Extract unique lowercase terms from titles, tags, and categories."""
+        if self._term_dict is not None:
+            return self._term_dict
+
+        rows = await self._db.execute_fetchall("SELECT DISTINCT title, tags, category FROM chunks")
+        terms: set[str] = set()
+        for row in rows:
+            for col_idx in range(3):
+                val = row[col_idx]
+                if not val:
+                    continue
+                # tags column is JSON array
+                if col_idx == 1:
+                    try:
+                        tag_list = json.loads(val)
+                        for tag in tag_list:
+                            for word in tag.lower().split():
+                                if len(word) >= 2:
+                                    terms.add(word)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                else:
+                    for word in val.lower().split():
+                        word = _FTS5_SPECIAL.sub("", word).strip()
+                        if len(word) >= 2:
+                            terms.add(word)
+
+        self._term_dict = sorted(terms)
+        return self._term_dict
+
+    def _invalidate_term_dictionary(self) -> None:
+        self._term_dict = None
+
+    async def _fuzzy_search(
+        self,
+        query: str,
+        *,
+        category: str | None = None,
+        limit: int = 5,
+    ) -> tuple[str | None, list[dict[str, Any]]]:
+        """Try to correct typos in query terms and re-run FTS5 search.
+
+        Returns (corrected_query, results) or (None, []) if no correction found.
+        """
+        import difflib
+
+        dictionary = await self._build_term_dictionary()
+        if not dictionary or len(dictionary) > self._MAX_DICT_SIZE:
+            if len(dictionary) > self._MAX_DICT_SIZE:
+                log.warning("fuzzy: dictionary too large (%d terms), skipping", len(dictionary))
+            return None, []
+
+        terms = query.lower().split()
+        corrected = list(terms)
+        any_corrected = False
+
+        for i, term in enumerate(terms):
+            if len(term) < 3:
+                continue
+            # Skip if the term already exists in dictionary
+            if term in dictionary:
+                continue
+            # Distance threshold: ≤1 for short terms (<6 chars), ≤2 for longer
+            cutoff = 0.8 if len(term) >= 6 else 0.75
+            # get_close_matches uses SequenceMatcher ratio, not Levenshtein directly.
+            # Ratio ≥ 0.75 for 4-char word ≈ distance ≤ 1; ≥ 0.8 for 6+ ≈ distance ≤ 2
+            matches = difflib.get_close_matches(term, dictionary, n=1, cutoff=cutoff)
+            if matches:
+                corrected[i] = matches[0]
+                any_corrected = True
+
+        if not any_corrected:
+            return None, []
+
+        corrected_query = " ".join(corrected)
+        log.info("fuzzy: %r → %r", query, corrected_query)
+        results = await self._search_keyword(corrected_query, category=category, limit=limit)
+        if results:
+            return corrected_query, results
+        return None, []
 
     # -- document CRUD -----------------------------------------------------
 
@@ -779,6 +879,7 @@ class Backend:
         answers: list[str] | None = None,
         description: str | None = None,
     ) -> int:
+        self._invalidate_term_dictionary()
         tags_json = json.dumps(tags) if tags else None
         await self._db.execute("DELETE FROM chunks WHERE file_path = ?", (rel_path,))
         for i, chunk in enumerate(chunks):

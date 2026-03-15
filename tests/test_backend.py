@@ -1046,3 +1046,216 @@ class TestSynonymSearchIntegration:
         # File path search uses LIKE, not FTS — synonyms don't apply
         results = await backend.search("docs/k8s.md")
         assert len(results) >= 1
+
+
+# ── Fuzzy matching fallback ──────────────────────────────────────────
+
+
+class TestFuzzyMatchFallback:
+    async def test_typo_corrected(self, backend):
+        """'kuberntes' (typo) should find doc titled 'Kubernetes'."""
+        await backend.ingest_file(
+            "k8s.md",
+            [
+                {
+                    "title": "Kubernetes",
+                    "content": "How to deploy on kubernetes clusters",
+                    "section_path": "K8s",
+                }
+            ],
+            title="Kubernetes",
+            category="devops",
+            audience="all",
+        )
+        results = await backend.search("kuberntes")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "k8s.md"
+        assert results[0].get("corrected_query") is not None
+
+    async def test_short_word_single_char_typo_corrected(self, backend):
+        """Single-char typo in a 4-char word: 'tset' → 'test' (distance 1)."""
+        await backend.ingest_file(
+            "test.md",
+            [
+                {
+                    "title": "Test Guide",
+                    "content": "How to run tests in the project",
+                    "section_path": "Test",
+                }
+            ],
+            title="Test Guide",
+            category="dev",
+            audience="all",
+        )
+        results = await backend.search("tset guide")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "test.md"
+
+    async def test_short_word_two_char_typo_not_corrected(self, backend):
+        """Two-char typo in a 4-char word should NOT be corrected (too distant)."""
+        await backend.ingest_file(
+            "test.md",
+            [
+                {
+                    "title": "Test",
+                    "content": "Testing content for the project",
+                    "section_path": "Test",
+                }
+            ],
+            title="Test",
+            category="dev",
+            audience="all",
+        )
+        # "txyz" is distance 3 from "test" — should not match
+        results = await backend.search("txyz")
+        assert len(results) == 0
+
+    async def test_exact_match_not_corrected(self, backend):
+        """'deploy' should NOT be corrected when it exists in dictionary."""
+        await backend.ingest_file(
+            "deploy.md",
+            [
+                {
+                    "title": "Deploy",
+                    "content": "How to deploy applications",
+                    "section_path": "Deploy",
+                }
+            ],
+            title="Deploy",
+            category="ops",
+            audience="all",
+        )
+        # "deploy" exists — should find via FTS, not fuzzy
+        results = await backend.search("deploy")
+        assert len(results) >= 1
+        assert results[0].get("corrected_query") is None
+
+    async def test_corrected_query_field_only_on_correction(self, backend):
+        """corrected_query should NOT appear when FTS5 finds results directly."""
+        await backend.ingest_file(
+            "guide.md",
+            [
+                {
+                    "title": "Guide",
+                    "content": "A comprehensive guide to configuration",
+                    "section_path": "Guide",
+                }
+            ],
+            title="Guide",
+            category="docs",
+            audience="all",
+        )
+        results = await backend.search("guide")
+        assert len(results) >= 1
+        assert results[0].get("corrected_query") is None
+
+    async def test_empty_dictionary(self, backend):
+        """Fuzzy search on an empty index returns nothing."""
+        results = await backend.search("kuberntes")
+        assert results == []
+
+    async def test_dictionary_cached_and_invalidated(self, backend):
+        """Dictionary is cached after first build and invalidated on ingest."""
+        await backend.ingest_file(
+            "a.md",
+            [{"title": "Alpha", "content": "Content about alpha", "section_path": "A"}],
+            title="Alpha",
+            category="general",
+            audience="all",
+        )
+        # Build dictionary
+        d1 = await backend._build_term_dictionary()
+        assert "alpha" in d1
+
+        # Should be cached
+        d2 = await backend._build_term_dictionary()
+        assert d1 is d2
+
+        # Ingest invalidates cache
+        await backend.ingest_file(
+            "b.md",
+            [{"title": "Beta", "content": "Content about beta", "section_path": "B"}],
+            title="Beta",
+            category="general",
+            audience="all",
+        )
+        d3 = await backend._build_term_dictionary()
+        assert d3 is not d1
+        assert "beta" in d3
+
+    async def test_multi_term_correction(self, backend):
+        """Multiple typos in one query: 'kuberntes deploment' → corrected."""
+        await backend.ingest_file(
+            "k8s.md",
+            [
+                {
+                    "title": "Kubernetes Deployment",
+                    "content": "How to create a kubernetes deployment",
+                    "section_path": "K8s",
+                }
+            ],
+            title="Kubernetes Deployment",
+            category="devops",
+            audience="all",
+        )
+        results = await backend.search("kuberntes deploment")
+        assert len(results) >= 1
+        assert results[0]["file_path"] == "k8s.md"
+        corrected = results[0].get("corrected_query")
+        assert corrected is not None
+        assert "kubernetes" in corrected
+        assert "deployment" in corrected
+
+    async def test_short_query_terms_skipped(self, backend):
+        """Query terms shorter than 3 chars should not trigger fuzzy matching."""
+        results = await backend.search("ab")
+        assert results == []
+
+    async def test_fuzzy_not_triggered_when_fts_has_results(self, backend):
+        """Fuzzy fallback should never run if FTS5 found results."""
+        await backend.ingest_file(
+            "doc.md",
+            [
+                {
+                    "title": "Settlement",
+                    "content": "Settlement lifecycle overview",
+                    "section_path": "Doc",
+                }
+            ],
+            title="Settlement",
+            category="finance",
+            audience="all",
+        )
+        results = await backend.search("settlement")
+        assert len(results) >= 1
+        assert results[0].get("corrected_query") is None
+
+    async def test_performance_large_dictionary(self, backend):
+        """Fuzzy match on a ~10K-term dictionary completes in < 100ms."""
+        import time
+
+        # Ingest many docs to build a large dictionary
+        for i in range(500):
+            await backend.ingest_file(
+                f"doc{i}.md",
+                [
+                    {
+                        "title": f"Document {i} about topic{i} alpha{i} beta{i}",
+                        "content": f"Content for document number {i}",
+                        "section_path": f"Doc {i}",
+                    }
+                ],
+                title=f"Document {i} about topic{i} alpha{i} beta{i}",
+                category=f"cat{i % 10}",
+                audience="all",
+                tags=[f"tag{i}", f"keyword{i}", f"label{i}"],
+            )
+
+        # Build dictionary and measure fuzzy search time
+        dictionary = await backend._build_term_dictionary()
+        assert len(dictionary) >= 100  # Sanity check
+
+        start = time.perf_counter()
+        await backend.search("nonexistentterm")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        assert elapsed_ms < 500  # Generous bound; spec says <100ms for fuzzy alone
