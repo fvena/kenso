@@ -55,9 +55,13 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         total_chunks = sum(r.chunks for r in results)
 
         for r in results:
-            status = {"ingested": "✓", "unchanged": "–", "skipped": "⊘", "error": "✗"}.get(
-                r.action, "?"
-            )
+            status = {
+                "ingested": "✓",
+                "unchanged": "–",
+                "skipped": "⊘",
+                "error": "✗",
+                "removed": "✕",
+            }.get(r.action, "?")
             line = f"  {status} {r.path} ({r.chunks} chunks)"
             if r.detail:
                 line += f" [{r.detail}]"
@@ -67,6 +71,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
             f"\n  {len(results)} files: {counts.get('ingested', 0)} ingested, "
             f"{counts.get('unchanged', 0)} unchanged, "
             f"{counts.get('skipped', 0)} skipped, "
+            f"{counts.get('removed', 0)} removed, "
             f"{counts.get('error', 0)} errors. "
             f"Total: {total_chunks} chunks."
         )

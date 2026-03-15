@@ -713,6 +713,31 @@ class Backend:
             "links": links,
         }
 
+    async def get_all_file_paths(self) -> set[str]:
+        """Return all distinct file_path values from the chunks table."""
+        if not await self._table_exists("chunks"):
+            return set()
+        rows = await self._db.execute_fetchall("SELECT DISTINCT file_path FROM chunks")
+        return {r[0] for r in rows}
+
+    async def delete_docs(self, paths: list[str]) -> int:
+        """Delete chunks and links for the given file paths.
+
+        Returns number of paths deleted.
+        """
+        if not paths:
+            return 0
+        has_links = await self._table_exists("links")
+        for path in paths:
+            await self._db.execute("DELETE FROM chunks WHERE file_path = ?", (path,))
+            if has_links:
+                await self._db.execute(
+                    "DELETE FROM links WHERE source_path = ? OR target_path = ?",
+                    (path, path),
+                )
+        await self._db.commit()
+        return len(paths)
+
     # -- helpers -----------------------------------------------------------
 
     async def _table_exists(self, name: str) -> bool:

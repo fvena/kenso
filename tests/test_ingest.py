@@ -7,6 +7,7 @@ from kenso.ingest import (
     _apply_overlap,
     _find_protected_ranges,
     _is_in_protected,
+    _match_kensoignore,
     _split_paragraphs_safe,
     _split_section_by_subheadings,
     chunk_by_headings,
@@ -151,11 +152,33 @@ class TestChunkByHeadings:
         assert any("Section One" in t for t in titles)
         assert any("Section Two" in t for t in titles)
 
-    def test_preamble_too_short(self):
+    def test_short_preamble_merged_into_first_section(self):
         md = "# Title\n\nShort.\n\n## Section\n\nContent of the section."
         chunks = chunk_by_headings(md, "test.md")
         titles = [c["title"] for c in chunks]
+        # Short preamble should NOT create a separate Overview chunk
         assert not any("Overview" in t for t in titles)
+        # But the short preamble text should be merged into the first section
+        section_chunk = [c for c in chunks if "Section" in c["title"]][0]
+        assert "Short." in section_chunk["content"]
+
+    def test_preamble_merge_30_chars(self):
+        """A 30-char intro should be merged into the first section chunk."""
+        intro = "This covers deployment."  # 23 chars, under 50
+        md = f"# Title\n\n{intro}\n\n## Setup\n\nSetup instructions here."
+        chunks = chunk_by_headings(md, "test.md")
+        titles = [c["title"] for c in chunks]
+        assert not any("Overview" in t for t in titles)
+        setup_chunk = [c for c in chunks if "Setup" in c["title"]][0]
+        assert intro in setup_chunk["content"]
+
+    def test_preamble_100_chars_separate_overview(self):
+        """A 100-char intro should still create a separate overview chunk."""
+        intro = "A" * 100
+        md = f"# Title\n\n{intro}\n\n## Section\n\nContent of the section."
+        chunks = chunk_by_headings(md, "test.md")
+        titles = [c["title"] for c in chunks]
+        assert any("Overview" in t for t in titles)
 
     def test_section_path_includes_doc_title(self):
         md = "# My Doc\n\n## Features\n\nSome features described here."
@@ -429,3 +452,123 @@ class TestIngestPath:
         assert results[0].action == "ingested"
 
 
+# ── Stale document cleanup ──────────────────────────────────────────
+
+
+class TestStaleDocCleanup:
+    async def test_deleted_file_is_removed(self, tmp_path):
+        """Create DB with files A and B, remove B from disk, verify B's chunks are deleted."""
+        (tmp_path / "a.md").write_text(
+            "# Doc A\n\nThis is document A with enough content to be indexed."
+        )
+        (tmp_path / "b.md").write_text(
+            "# Doc B\n\nThis is document B with enough content to be indexed."
+        )
+        db_path = str(tmp_path / "test.db")
+        cfg = KensoConfig(database_url=db_path)
+
+        # First ingest: both files
+        results = await ingest_path(cfg, str(tmp_path))
+        assert sum(1 for r in results if r.action == "ingested") == 2
+
+        # Remove file B from disk
+        (tmp_path / "b.md").unlink()
+
+        # Second ingest: only A on disk
+        results = await ingest_path(cfg, str(tmp_path))
+        actions = {r.path: r.action for r in results}
+        assert actions.get("a.md") == "unchanged"
+        assert any(r.action == "removed" and "b.md" in r.path for r in results)
+
+        # Verify B is actually gone from DB
+        from kenso.backend import Backend
+
+        backend = Backend(cfg)
+        await backend.startup()
+        try:
+            doc = await backend.get_doc("b.md")
+            assert doc == []
+        finally:
+            await backend.shutdown()
+
+    async def test_subdirectory_ingest_does_not_delete_sibling(self, tmp_path):
+        """Ingesting a subdirectory shouldn't delete entries from a sibling directory."""
+        sub1 = tmp_path / "sub1"
+        sub2 = tmp_path / "sub2"
+        sub1.mkdir()
+        sub2.mkdir()
+        (sub1 / "doc1.md").write_text(
+            "# Doc 1\n\nContent for document one that is long enough to index."
+        )
+        (sub2 / "doc2.md").write_text(
+            "# Doc 2\n\nContent for document two that is long enough to index."
+        )
+        db_path = str(tmp_path / "test.db")
+        cfg = KensoConfig(database_url=db_path)
+
+        # Ingest both directories
+        await ingest_path(cfg, str(tmp_path))
+
+        # Re-ingest only sub1 — sub2's docs should remain
+        results = await ingest_path(cfg, str(sub1))
+        removed = [r for r in results if r.action == "removed"]
+        # Should not have removed sub2/doc2.md because it's outside scope
+        removed_paths = [r.path for r in removed]
+        assert not any("doc2" in p for p in removed_paths)
+
+
+# ── .kensoignore ────────────────────────────────────────────────────
+
+
+class TestKensoignore:
+    def test_basic_pattern_excludes_file(self, tmp_path):
+        (tmp_path / "keep.md").write_text("# Keep")
+        (tmp_path / "CHANGELOG.md").write_text("# Changes")
+        (tmp_path / ".kensoignore").write_text("CHANGELOG.md\n")
+        files = scan_files(tmp_path)
+        names = [f.name for f in files]
+        assert "keep.md" in names
+        assert "CHANGELOG.md" not in names
+
+    def test_directory_pattern(self, tmp_path):
+        drafts = tmp_path / "drafts"
+        drafts.mkdir()
+        (drafts / "wip.md").write_text("# WIP")
+        (tmp_path / "keep.md").write_text("# Keep")
+        (tmp_path / ".kensoignore").write_text("drafts/\n")
+        files = scan_files(tmp_path)
+        names = [f.name for f in files]
+        assert "keep.md" in names
+        assert "wip.md" not in names
+
+    def test_glob_pattern(self, tmp_path):
+        releases = tmp_path / "releases"
+        releases.mkdir()
+        (releases / "v1.md").write_text("# V1")
+        (releases / "v2.md").write_text("# V2")
+        (tmp_path / "keep.md").write_text("# Keep")
+        (tmp_path / ".kensoignore").write_text("releases/*.md\n")
+        files = scan_files(tmp_path)
+        names = [f.name for f in files]
+        assert "keep.md" in names
+        assert "v1.md" not in names
+        assert "v2.md" not in names
+
+    def test_comment_and_blank_lines_ignored(self, tmp_path):
+        (tmp_path / "a.md").write_text("# A")
+        (tmp_path / ".kensoignore").write_text("# comment\n\n")
+        files = scan_files(tmp_path)
+        assert len(files) == 1
+
+    def test_no_kensoignore_file(self, tmp_path):
+        (tmp_path / "a.md").write_text("# A")
+        (tmp_path / "b.md").write_text("# B")
+        files = scan_files(tmp_path)
+        assert len(files) == 2
+
+    def test_negation_pattern(self):
+        patterns = ["drafts/", "!drafts/important.md"]
+        # important.md should not be ignored (negated)
+        assert not _match_kensoignore("drafts/important.md", patterns)
+        # other files in drafts should be ignored
+        assert _match_kensoignore("drafts/wip.md", patterns)

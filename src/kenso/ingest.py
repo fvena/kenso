@@ -63,10 +63,11 @@ def parse_frontmatter(markdown: str) -> tuple[dict, str]:
         return {}, markdown
 
     fm_block = markdown[4:end]
-    body = markdown[end + 4:].lstrip("\n")
+    body = markdown[end + 4 :].lstrip("\n")
 
     try:
         import yaml
+
         meta = yaml.safe_load(fm_block) or {}
         if not isinstance(meta, dict):
             meta = _parse_frontmatter_simple(fm_block)
@@ -264,7 +265,7 @@ def _split_paragraphs_safe(text: str, max_size: int) -> list[str]:
         return [text]
 
     boundaries = [0] + [sp + 2 for sp in split_points] + [len(text)]
-    segments = [text[boundaries[i]:boundaries[i + 1]] for i in range(len(boundaries) - 1)]
+    segments = [text[boundaries[i] : boundaries[i + 1]] for i in range(len(boundaries) - 1)]
 
     chunks: list[str] = []
     current_parts: list[str] = []
@@ -294,7 +295,11 @@ def _split_paragraphs_safe(text: str, max_size: int) -> list[str]:
 
 
 def _split_section_by_subheadings(
-    content: str, doc_title: str, parent_title: str, level: int, max_size: int,
+    content: str,
+    doc_title: str,
+    parent_title: str,
+    level: int,
+    max_size: int,
 ) -> list[dict]:
     """Split an oversized section by sub-headings (H3 inside H2, etc.)."""
     sub_re = re.compile(rf"^{'#' * (level + 1)} (.+)$", re.MULTILINE)
@@ -305,12 +310,17 @@ def _split_section_by_subheadings(
     if not matches:
         parts = _split_paragraphs_safe(content, max_size)
         if len(parts) == 1:
-            return [{"title": full_parent, "content": content.strip(),
-                      "section_path": full_parent}]
+            return [
+                {"title": full_parent, "content": content.strip(), "section_path": full_parent}
+            ]
         return [
-            {"title": full_parent if i == 0 else f"{full_parent} (cont.)",
-             "content": p, "section_path": full_parent}
-            for i, p in enumerate(parts) if p.strip()
+            {
+                "title": full_parent if i == 0 else f"{full_parent} (cont.)",
+                "content": p,
+                "section_path": full_parent,
+            }
+            for i, p in enumerate(parts)
+            if p.strip()
         ]
 
     chunks = []
@@ -326,20 +336,23 @@ def _split_section_by_subheadings(
         full_title = f"{doc_title} > {title}"
 
         if len(section) > max_size and level + 1 < 4:
-            chunks.extend(_split_section_by_subheadings(
-                section, doc_title, title, level + 1, max_size))
+            chunks.extend(
+                _split_section_by_subheadings(section, doc_title, title, level + 1, max_size)
+            )
         elif len(section) > max_size:
             parts = _split_paragraphs_safe(section, max_size)
             for j, p in enumerate(parts):
                 if not p.strip():
                     continue
-                chunks.append({
-                    "title": full_title if j == 0 else f"{full_title} (cont.)",
-                    "content": p, "section_path": full_title,
-                })
+                chunks.append(
+                    {
+                        "title": full_title if j == 0 else f"{full_title} (cont.)",
+                        "content": p,
+                        "section_path": full_title,
+                    }
+                )
         else:
-            chunks.append({"title": full_title, "content": section,
-                           "section_path": full_title})
+            chunks.append({"title": full_title, "content": section, "section_path": full_title})
 
     return chunks
 
@@ -364,14 +377,16 @@ def _apply_overlap(chunks: list[dict], overlap: int) -> list[dict]:
             tail = prev_content[-overlap:]
             space_idx = tail.find(" ")
             if space_idx != -1:
-                tail = tail[space_idx + 1:]
+                tail = tail[space_idx + 1 :]
         if tail.strip():
             chunks[i]["content"] = tail.rstrip() + "\n\n" + chunks[i]["content"]
 
     return chunks
 
 
-def chunk_by_headings(markdown: str, file_path: str, max_chunk_size: int = 4000, chunk_overlap: int = 0) -> list[dict]:
+def chunk_by_headings(
+    markdown: str, file_path: str, max_chunk_size: int = 4000, chunk_overlap: int = 0
+) -> list[dict]:
     """Split markdown into chunks by H2 headings.
 
     Strategy:
@@ -389,22 +404,32 @@ def chunk_by_headings(markdown: str, file_path: str, max_chunk_size: int = 4000,
             return [{"title": doc_title, "content": stripped, "section_path": doc_title}]
         parts = _split_paragraphs_safe(stripped, max_chunk_size)
         return [
-            {"title": doc_title if i == 0 else f"{doc_title} (cont.)",
-             "content": p, "section_path": doc_title}
-            for i, p in enumerate(parts) if p.strip()
+            {
+                "title": doc_title if i == 0 else f"{doc_title} (cont.)",
+                "content": p,
+                "section_path": doc_title,
+            }
+            for i, p in enumerate(parts)
+            if p.strip()
         ] or [{"title": doc_title, "content": stripped, "section_path": doc_title}]
 
     chunks = []
 
-    # Fix 1.1: Capture content before first H2 as preamble chunk
-    preamble = markdown[:matches[0].start()].strip()
+    # Capture content before first H2 as preamble
+    preamble = markdown[: matches[0].start()].strip()
     preamble = _H1_RE.sub("", preamble).strip()  # Remove H1 (already in doc_title)
+    merge_preamble = ""
     if len(preamble) >= 50:
-        chunks.append({
-            "title": f"{doc_title} — Overview",
-            "content": preamble,
-            "section_path": doc_title,
-        })
+        chunks.append(
+            {
+                "title": f"{doc_title} — Overview",
+                "content": preamble,
+                "section_path": doc_title,
+            }
+        )
+    elif preamble:
+        # Short preamble: merge into first section chunk
+        merge_preamble = preamble
 
     for i, match in enumerate(matches):
         title = match.group(1).strip()
@@ -419,17 +444,31 @@ def chunk_by_headings(markdown: str, file_path: str, max_chunk_size: int = 4000,
         full_title = f"{doc_title} > {title}"
 
         if len(content) > max_chunk_size:
-            chunks.extend(_split_section_by_subheadings(
-                content, doc_title, title, 2, max_chunk_size))
+            chunks.extend(
+                _split_section_by_subheadings(content, doc_title, title, 2, max_chunk_size)
+            )
         else:
-            chunks.append({
-                "title": full_title,
-                "content": content,
-                "section_path": f"{doc_title} > {title}",
-            })
+            chunks.append(
+                {
+                    "title": full_title,
+                    "content": content,
+                    "section_path": f"{doc_title} > {title}",
+                }
+            )
 
-    result = chunks or [{"title": doc_title, "content": markdown.strip(),
-                          "section_path": doc_title}]
+    # Merge short preamble into first section chunk
+    if merge_preamble and chunks:
+        # Find first non-overview chunk (or first chunk if no overview)
+        target = 0
+        for idx, c in enumerate(chunks):
+            if not c["title"].endswith("— Overview"):
+                target = idx
+                break
+        chunks[target]["content"] = merge_preamble + "\n\n" + chunks[target]["content"]
+
+    result = chunks or [
+        {"title": doc_title, "content": markdown.strip(), "section_path": doc_title}
+    ]
     if chunk_overlap > 0:
         result = _apply_overlap(result, chunk_overlap)
     return result
@@ -438,11 +477,85 @@ def chunk_by_headings(markdown: str, file_path: str, max_chunk_size: int = 4000,
 # ── File scanning ────────────────────────────────────────────────────
 
 
+def _load_kensoignore(root: Path) -> list[str] | None:
+    """Load .kensoignore patterns from the root directory.
+
+    Returns parsed pattern lines, or None if no .kensoignore file exists.
+    """
+    ignore_path = root / ".kensoignore"
+    if not ignore_path.is_file():
+        return None
+    try:
+        text = ignore_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        log.warning("Could not read .kensoignore: %s", e)
+        return None
+    patterns: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.append(line)
+    return patterns if patterns else None
+
+
+def _match_kensoignore(rel_path: str, patterns: list[str]) -> bool:
+    """Check if a relative path matches any .kensoignore pattern.
+
+    Supports:
+    - Negation with ! prefix (un-ignores a file)
+    - Trailing / for directory-only matching
+    - Glob patterns via pathlib.PurePath.match()
+    """
+    from pathlib import PurePosixPath
+
+    path = PurePosixPath(rel_path)
+    ignored = False
+    for pattern in patterns:
+        negate = False
+        p = pattern
+        if p.startswith("!"):
+            negate = True
+            p = p[1:]
+
+        dir_only = p.endswith("/")
+        if dir_only:
+            p = p.rstrip("/")
+            # For directory-only patterns, check if any parent matches
+            matched = any(PurePosixPath(part).match(p) for part in path.parents)
+            if not matched:
+                # Also check if the pattern matches a path component prefix
+                matched = any(p in str(parent) for parent in path.parents)
+        else:
+            matched = path.match(p)
+
+        if matched:
+            ignored = not negate
+
+    return ignored
+
+
 def scan_files(root: Path) -> list[Path]:
-    """Recursively find all .md files under root, sorted."""
+    """Recursively find all .md files under root, sorted.
+
+    If a .kensoignore file exists in root, filters out matching paths.
+    """
     if root.is_file() and root.suffix.lower() == ".md":
         return [root]
-    return sorted(root.rglob("*.md"))
+
+    files = sorted(root.rglob("*.md"))
+
+    patterns = _load_kensoignore(root)
+    if patterns is None:
+        return files
+
+    filtered: list[Path] = []
+    for f in files:
+        rel = str(f.relative_to(root))
+        if not _match_kensoignore(rel, patterns):
+            filtered.append(f)
+
+    return filtered
 
 
 # ── Ingestion pipeline ───────────────────────────────────────────────
@@ -482,7 +595,9 @@ async def ingest_path(
             try:
                 text = f.read_text(encoding="utf-8", errors="replace")
                 if len(text.strip()) < 50:
-                    results.append(IngestResult(path=rel, chunks=0, action="skipped", detail="<50 chars"))
+                    results.append(
+                        IngestResult(path=rel, chunks=0, action="skipped", detail="<50 chars")
+                    )
                     continue
                 digest = content_hash(text)
             except OSError as e:
@@ -496,11 +611,15 @@ async def ingest_path(
                 existing = await backend.get_content_hash(rel)
                 if existing == digest:
                     doc_chunks = await backend.get_doc(rel)
-                    results.append(IngestResult(path=rel, chunks=len(doc_chunks), action="unchanged"))
+                    results.append(
+                        IngestResult(path=rel, chunks=len(doc_chunks), action="unchanged")
+                    )
                     continue
 
             title = extract_title(body) or frontmatter.get("title") or f.stem
-            category = frontmatter.get("category") or (f.parent.name if f.parent != base else "general")
+            category = frontmatter.get("category") or (
+                f.parent.name if f.parent != base else "general"
+            )
             audience = frontmatter.get("audience", "all")
 
             # Handle tags as YAML list or comma-separated string
@@ -512,7 +631,9 @@ async def ingest_path(
             else:
                 tags = None
 
-            chunks = chunk_by_headings(body, rel, max_chunk_size=config.chunk_size, chunk_overlap=config.chunk_overlap)
+            chunks = chunk_by_headings(
+                body, rel, max_chunk_size=config.chunk_size, chunk_overlap=config.chunk_overlap
+            )
 
             # Extract frontmatter metadata for searchable_content
             raw_aliases = frontmatter.get("aliases")
@@ -520,12 +641,23 @@ async def ingest_path(
             raw_answers = frontmatter.get("answers")
             answers = [str(a) for a in raw_answers] if isinstance(raw_answers, list) else None
             fm_description = frontmatter.get("description")
-            fm_description = fm_description.strip() if isinstance(fm_description, str) and fm_description.strip() else None
+            fm_description = (
+                fm_description.strip()
+                if isinstance(fm_description, str) and fm_description.strip()
+                else None
+            )
 
             count = await backend.ingest_file(
-                rel, chunks, title=title, category=category,
-                audience=audience, tags=tags, content_hash=digest,
-                aliases=aliases, answers=answers, description=fm_description,
+                rel,
+                chunks,
+                title=title,
+                category=category,
+                audience=audience,
+                tags=tags,
+                content_hash=digest,
+                aliases=aliases,
+                answers=answers,
+                description=fm_description,
             )
 
             link_targets = extract_relates_to(text)
@@ -537,6 +669,31 @@ async def ingest_path(
 
             results.append(IngestResult(path=rel, chunks=count, action="ingested"))
             log.info("[%d/%d] ingested: %s (%d chunks)", idx, total_files, rel, count)
+
+        # Clean up stale documents (files removed from disk).
+        # Only clean when ingesting a directory (not a single file).
+        # Scope to paths whose parent directory matches a live path's parent,
+        # so ingesting a subdirectory doesn't delete entries from siblings.
+        if root_path.is_dir():
+            live_paths = {str(f.relative_to(base)) for f in files}
+            db_paths = await backend.get_all_file_paths()
+
+            # Compute directory prefixes covered by our scan
+            live_dirs: set[str] = set()
+            for p in live_paths:
+                live_dirs.add(p.rsplit("/", 1)[0] if "/" in p else "")
+
+            stale = []
+            for db_path in sorted(db_paths - live_paths):
+                db_dir = db_path.rsplit("/", 1)[0] if "/" in db_path else ""
+                if db_dir in live_dirs:
+                    stale.append(db_path)
+
+            if stale:
+                await backend.delete_docs(stale)
+                for sp in stale:
+                    results.append(IngestResult(path=sp, chunks=0, action="removed"))
+                    log.info("removed stale: %s", sp)
 
     finally:
         await backend.shutdown()
