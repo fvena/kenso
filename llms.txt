@@ -1,0 +1,127 @@
+# kenso
+
+> Your docs are the source of truth. Make them searchable.
+
+kenso is an MCP server that turns a folder of Markdown files into a searchable knowledge base for AI agents. SQLite FTS5, zero config, two dependencies.
+
+## Why kenso
+
+- Search returns ranked excerpts (~600 tokens) instead of dumping entire files (3,000–8,000+).
+- No format conversion, no lock-in — your Markdown files stay as they are.
+- Deterministic results — same query, same answer, every time.
+- Document graph with typed relations — agents navigate context, not just keywords.
+- Two dependencies (`mcp` + `aiosqlite`). No vector DB, no embedding model.
+
+| Capability | Raw file reading | kenso (BM25) | Embedding-based RAG |
+|------------|-----------------|--------------|---------------------|
+| Setup | None | `pip install` + `ingest` | Vector DB + embedding model |
+| Token cost per query | 3,000–8,000+ | ~600 | ~600 |
+| Vocabulary mismatch | None | Aliases + tags + cascade | Semantic similarity |
+| Document relationships | None | Typed graph with traversal | None (flat retrieval) |
+| Deterministic results | Yes | Yes | No (embedding drift) |
+| Dependencies | None | 2 | 5+ |
+
+## Quick start
+
+```bash
+pip install kenso            # core — Python 3.11+, MIT license
+pip install kenso[yaml]      # recommended: YAML frontmatter support
+kenso ingest ./docs
+kenso serve
+```
+
+```bash
+# Test it before connecting to an editor
+kenso search "how does authentication work"
+# → title: "Authentication Flow"
+#   score: 12.4
+#   content_preview: "OAuth 2.0 with PKCE. The client redirects to /authorize..."
+```
+
+## MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `search_docs` | Keyword search with BM25 ranking, dedup, and relation re-ranking |
+| `search_multi` | Multi-query search with Reciprocal Rank Fusion merge |
+| `get_doc` | Retrieve full document content by file path |
+| `get_related` | Navigate document graph with configurable depth and relation type filter |
+
+## Frontmatter fields
+
+```yaml
+---
+title: Settlement Lifecycle           # indexed at 10× weight
+category: post-trade                  # indexed at 5× weight
+tags: [settlement, T+2, DVP]         # indexed at 7× weight
+aliases: [trade settlement, liquidación de operaciones]  # bridges vocabulary gaps
+answers:
+  - How are equity trades settled?    # matches question-style queries
+  - What is the T+2 settlement cycle?
+relates_to:
+  - path: guides/setup.md
+    relation: feeds_into
+  - path: compliance/reporting.md
+    relation: triggers
+---
+```
+
+Supported fields: `title`, `category`, `tags`, `aliases`, `answers`, `description`, `relates_to`.
+
+## Database resolution
+
+kenso resolves the database with a local-first cascade:
+
+1. `KENSO_DATABASE_URL` env var — explicit override, always wins
+2. `.kenso/docs.db` in the current directory — project-local (default for new projects)
+3. `~/.local/share/kenso/docs.db` — global fallback
+
+Add `.kenso/` to your `.gitignore`.
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KENSO_DATABASE_URL` | (cascade above) | SQLite database path override |
+| `KENSO_TRANSPORT` | `stdio` | Transport: stdio, sse, streamable-http |
+| `KENSO_HOST` | `127.0.0.1` | Server host (sse/streamable-http) |
+| `KENSO_PORT` | `8000` | Server port (sse/streamable-http) |
+| `KENSO_CHUNK_SIZE` | `4000` | Max chunk size in characters |
+| `KENSO_CHUNK_OVERLAP` | `0` | Overlap between consecutive chunks |
+| `KENSO_CONTENT_PREVIEW_CHARS` | `200` | Preview length in search results |
+| `KENSO_SEARCH_LIMIT_MAX` | `20` | Maximum results per search |
+| `KENSO_LOG_LEVEL` | `INFO` | Logging level |
+
+## Editor configuration
+
+**Cursor** `.cursor/mcp.json`:
+```json
+{ "mcpServers": { "kenso": { "command": "kenso", "args": ["serve"] } } }
+```
+
+**Claude Code** `.claude/mcp.json`:
+```json
+{ "mcpServers": { "kenso": { "command": "kenso", "args": ["serve"] } } }
+```
+
+**Codex CLI** `~/.codex/config.toml`:
+```toml
+[mcp_servers.kenso]
+command = "kenso"
+args = ["serve"]
+```
+
+If installed in a virtualenv, use the full path: `/path/to/.venv/bin/kenso`
+
+## CLI commands
+
+```
+kenso ingest <path>
+kenso serve
+kenso search <query>
+kenso stats
+```
+
+## Project info
+
+Python 3.11+ · MIT license · Typed (py.typed) · CI + 75% coverage threshold
