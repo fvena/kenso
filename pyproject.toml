@@ -12,35 +12,30 @@ requires-python = ">=3.11"
 authors = [{ name = "Francisco Vena" }]
 keywords = ["mcp", "search", "markdown", "knowledge-base", "sqlite", "fts5"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Text Processing :: Markup :: Markdown",
-    "Typing :: Typed",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Text Processing :: Markup :: Markdown",
+  "Typing :: Typed",
 ]
-dependencies = [
-    "mcp>=1.20",
-    "aiosqlite>=0.20",
-]
+dependencies = ["mcp>=1.20", "aiosqlite>=0.20"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8",
-    "pytest-asyncio>=0.24",
-    "pytest-cov>=6.0",
-    "mypy>=1.13",
-    "types-PyYAML>=6.0",
-    "ruff>=0.8",
-    "python-semantic-release>=9.0",
-    "pre-commit",
+  "pytest>=8",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
+  "mypy>=1.13",
+  "types-PyYAML>=6.0",
+  "ruff>=0.8",
+  "python-semantic-release>=9.0",
+  "pre-commit",
 ]
-yaml = [
-    "pyyaml>=6.0",
-]
+yaml = ["pyyaml>=6.0"]
 
 [project.urls]
 Homepage = "https://github.com/fvena/kenso"
@@ -79,9 +74,7 @@ disallow_untyped_defs = true
 
 [tool.coverage.run]
 source = ["kenso"]
-omit = [
-    "src/kenso/__main__.py",
-]
+omit = ["src/kenso/__main__.py"]
 
 [tool.coverage.report]
 show_missing = true
@@ -97,10 +90,23 @@ build_command = "pip install hatch && hatch build"
 tag_format = "v{version}"
 
 [tool.semantic_release.changelog]
-template_dir = false
+exclude_commit_patterns = []
+
+[tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
 
 [tool.semantic_release.commit_parser_options]
-allowed_tags = ["feat", "fix", "perf", "refactor", "docs", "style", "test", "build", "ci", "chore"]
+allowed_tags = [
+  "feat",
+  "fix",
+  "perf",
+  "refactor",
+  "docs",
+  "style",
+  "test",
+  "build",
+  "ci",
+  "chore",
+]
 minor_tags = ["feat"]
 patch_tags = ["fix", "perf", "refactor"]
