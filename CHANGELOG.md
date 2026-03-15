@@ -1,17 +1,60 @@
 # CHANGELOG
 
-## v1.0.0 (2026-03-15)
+
+## v1.2.0 (2026-03-15)
 
 ### Features
 
-- **schema**: add SQLite FTS5 database schema
-- **config**: add environment-based configuration
-- **backend**: add SQLite FTS5 search and storage engine
-- **ingest**: add Markdown parsing and chunking pipeline
-- **server**: add MCP server with search and document tools
-- **cli**: add command-line interface
-- **eval**: add search quality evaluation harness
+- **cli**: Add kenso lint command with retrieval quality scoring
+  ([`833216f`](https://github.com/fvena/kenso/commit/833216fb4668e783a8044878b72c7cc71d3d6bca))
+
+
+## v1.1.0 (2026-03-15)
+
+### Features
+
+- **ingest**: Merge short preambles, clean stale entries, and support .kensoignore
+  ([`3ee62a6`](https://github.com/fvena/kenso/commit/3ee62a652a62249bdb1234b3fbdb9b18227e99e4))
+
+- **search**: Add configurable synonym expansion via .kenso/synonyms.yml
+  ([`995597e`](https://github.com/fvena/kenso/commit/995597e14a0e0b2cdca5550d44cd0d677e6bcff3))
+
+- **search**: Add fuzzy matching fallback for typo tolerance
+  ([`84b97b3`](https://github.com/fvena/kenso/commit/84b97b3f05772bb4e9406dd2bef444bd8c6cfe60))
+
+- **search**: Expand compound terms in indexed content and filter stop words from queries
+  ([`78b8bbd`](https://github.com/fvena/kenso/commit/78b8bbd0da15433e74911c08a5d43a62e1d9a916))
+
+- **search**: Generate context-aware snippets from matching column
+  ([`c3d1041`](https://github.com/fvena/kenso/commit/c3d1041d611d183d23f280ead91b0a85d4804c92))
+
+
+## v1.0.0 (2026-03-15)
 
 ### Bug Fixes
 
-- **ci**: update semantic-release changelog config for v10 compatibility
+- **ci**: Update semantic-release changelog config for v10 compatibility
+  ([`56bd0ac`](https://github.com/fvena/kenso/commit/56bd0ac4b9e5ed66edb582506491042839ecbfab))
+
+### Features
+
+- **backend**: Add SQLite FTS5 search and storage engine
+  ([`8fd43b5`](https://github.com/fvena/kenso/commit/8fd43b51f1899e95a6ec87d439ca57f6323798c2))
+
+- **cli**: Add command-line interface
+  ([`f892a31`](https://github.com/fvena/kenso/commit/f892a31dc3bcda6df3320c0ad7b8ab54fbcf4599))
+
+- **config**: Add environment-based configuration
+  ([`bbffdac`](https://github.com/fvena/kenso/commit/bbffdac5c17ee549c9a97e763a0226f4df612b9b))
+
+- **eval**: Add search quality evaluation harness
+  ([`821a4ea`](https://github.com/fvena/kenso/commit/821a4eabd2764c7ea0f42f0d7c72da19c0d91dec))
+
+- **ingest**: Add Markdown parsing and chunking pipeline
+  ([`5611636`](https://github.com/fvena/kenso/commit/5611636a9698042c20958b0673563d4bf11b3ac0))
+
+- **schema**: Add SQLite FTS5 database schema
+  ([`c739df1`](https://github.com/fvena/kenso/commit/c739df12b778f95dcea70ba3293fa19ec2b738af))
+
+- **server**: Add MCP server with search and document tools
+  ([`bb80065`](https://github.com/fvena/kenso/commit/bb80065d35375c85661faae2b88147fc25840faa))
