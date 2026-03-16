@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.4.0 (2026-03-16)
+
+### Features
+
+- **cli**: Add --json flag to kenso ingest for structured output
+  ([`1fcf201`](https://github.com/fvena/kenso/commit/1fcf201204b517886786223573aad7a6765d2d2f))
+
+- **cli**: Integrate lint report into kenso ingest output
+  ([`2034990`](https://github.com/fvena/kenso/commit/20349900e3347231402cfaf4144a27a3d92b06f3))
+
+
 ## v1.3.0 (2026-03-16)
 
 ### Features
