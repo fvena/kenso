@@ -11,15 +11,38 @@ import sys
 from collections import Counter
 
 from kenso import __version__
+from kenso.ui import (
+    Style,
+    cascade_label,
+    glyph,
+    header,
+    human_size,
+    next_step,
+    output,
+    relevance_label,
+    rule_line,
+    severity_glyph,
+    summary,
+    terminal_snippet,
+)
 
 __all__ = ["main"]
 
 log = logging.getLogger("kenso")
 
+_MAX_FILE_LIST = 20  # collapse file list when more than this many files
 
-def _log_database(config) -> None:
-    """Log which database is being used and why."""
-    log.info("using %s (%s)", config.database_url, config.database_source)
+
+def _db_display(args: argparse.Namespace, config) -> str | None:
+    """Return db path string only when a non-default db was chosen."""
+    if getattr(args, "db", None):
+        return config.database_url
+    if os.environ.get("KENSO_DATABASE_URL"):
+        return config.database_url
+    return None
+
+
+# ── serve ──────────────────────────────────────────────────────────
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -28,7 +51,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     from kenso.server import mcp
 
     config = KensoConfig.from_env(db_override=getattr(args, "db", None))
-    _log_database(config)
+    log.debug("using %s (%s)", config.database_url, config.database_source)
 
     transport = config.transport
     if transport in ("sse", "streamable-http"):
@@ -36,6 +59,9 @@ def cmd_serve(args: argparse.Namespace) -> None:
         mcp.settings.port = int(config.port)
 
     mcp.run(transport=transport)  # type: ignore[arg-type]
+
+
+# ── ingest ─────────────────────────────────────────────────────────
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
@@ -47,7 +73,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         db_override=getattr(args, "db", None),
         create_if_missing=True,
     )
-    _log_database(config)
+    log.debug("using %s (%s)", config.database_url, config.database_source)
 
     async def _run():
         results = await ingest_path(config, args.path)
@@ -58,49 +84,95 @@ def cmd_ingest(args: argparse.Namespace) -> None:
             _print_ingest_json(args.path, results, counts, total_chunks)
             return
 
-        for r in results:
-            status = {
-                "ingested": "✓",
-                "unchanged": "–",
-                "skipped": "⊘",
-                "error": "✗",
-                "removed": "✕",
-            }.get(r.action, "?")
-            line = f"  {status} {r.path} ({r.chunks} chunks)"
-            if r.detail:
-                line += f" [{r.detail}]"
-            print(line)
-
-        print(
-            f"\n  {len(results)} files: {counts.get('ingested', 0)} ingested, "
-            f"{counts.get('unchanged', 0)} unchanged, "
-            f"{counts.get('skipped', 0)} skipped, "
-            f"{counts.get('removed', 0)} removed, "
-            f"{counts.get('error', 0)} errors. "
-            f"Total: {total_chunks} chunks."
+        # Header
+        header(
+            f"indexing {len(results)} documents",
+            db_path=_db_display(args, config),
         )
 
-        if counts.get("unchanged", 0) > 0:
-            print(
-                "\n  Note: Unchanged files were not re-ingested. Re-ingest with"
-                " updated content to enable compound term expansion for"
-                " improved search."
-            )
+        # File list (show once, collapse if > _MAX_FILE_LIST)
+        status_map = {
+            "ingested": (Style.GREEN, glyph["ok"]),
+            "unchanged": (Style.DIM, glyph["dash"]),
+            "skipped": (Style.DIM, glyph["skip"]),
+            "error": (Style.RED, glyph["fail"]),
+            "removed": (Style.RED, glyph["removed"]),
+        }
+        shown = 0
+        for r in results:
+            color, sym = status_map.get(r.action, ("", "?"))
+            chunk_label = f"{r.chunks} chunk{'s' if r.chunks != 1 else ''}"
+            line = f"{color}{sym}{Style.RESET} {r.path:<50} {Style.DIM}{chunk_label}{Style.RESET}"
+            if r.detail:
+                line += f" {Style.DIM}[{r.detail}]{Style.RESET}"
+            if shown < _MAX_FILE_LIST:
+                output(line)
+            shown += 1
+        if shown > _MAX_FILE_LIST:
+            output(f"{Style.DIM}... and {shown - _MAX_FILE_LIST} more{Style.RESET}")
 
-        # Append lint quality summary if there are indexable files
+        # Summary line
+        parts = []
+        parts.append(f"{len(results)} files")
+        parts.append(f"{counts.get('ingested', 0)} ingested")
+        parts.append(f"{counts.get('unchanged', 0)} unchanged")
+        parts.append(f"{total_chunks} chunks")
+        summary(" {dot} ".format(dot=glyph["dot"]).join(parts))
+
+        # Lint quality section
         has_indexable = any(r.action in ("ingested", "unchanged") for r in results)
         if has_indexable:
             try:
-                from kenso.lint import format_ingest_summary, lint_path
+                from kenso.lint import lint_path
 
                 chunk_size = int(os.environ.get("KENSO_CHUNK_SIZE", "4000"))
                 lint_result = lint_path(args.path, chunk_size=chunk_size)
-                print(f"\n{format_ingest_summary(lint_result)}")
+                _print_ingest_quality(lint_result)
             except Exception:
                 log.debug("lint summary failed", exc_info=True)
-                print("\n  Warning: Could not generate quality summary.")
+                output(
+                    f"\n{Style.YELLOW}Warning: Could not generate quality summary.{Style.RESET}"
+                )
 
     asyncio.run(_run())
+
+
+def _print_ingest_quality(lint_result) -> None:
+    """Print the quality score section after ingest."""
+    from kenso.lint import _IMPACT, _RULE_LABELS
+
+    output(f"\nQuality score: {lint_result.score}/100")
+
+    # Collect violation counts per rule
+    rule_counts: dict[str, int] = {}
+    rule_severity: dict[str, str] = {}
+    for fr in lint_result.file_results:
+        seen: set[str] = set()
+        for v in fr.violations:
+            if v.rule not in seen:
+                rule_counts[v.rule] = rule_counts.get(v.rule, 0) + 1
+                rule_severity[v.rule] = v.severity
+                seen.add(v.rule)
+
+    if rule_counts:
+        sorted_rules = sorted(
+            rule_counts.keys(),
+            key=lambda r: (-_IMPACT.get(r, 0), r),
+        )
+        for rule in sorted_rules:
+            label = _RULE_LABELS.get(rule, rule)
+            count = rule_counts[rule]
+            impact = _IMPACT.get(rule, 0)
+            impact_str = f"+{impact}%" if impact else ""
+            sev = rule_severity.get(rule, "warning")
+            sg = severity_glyph(sev)
+            count_str = f"{count} file{'s' if count != 1 else ''}"
+            output(f"{sg} {label:<40} {count_str:>8} {impact_str:>5}")
+
+    files_with_issues = sum(1 for fr in lint_result.file_results if fr.violations)
+    if files_with_issues:
+        output(f"{files_with_issues} files with issues {glyph['dot']} ", end="")
+        next_step("kenso lint --detail")
 
 
 def _print_ingest_json(
@@ -149,11 +221,14 @@ def _print_ingest_json(
         except Exception:
             log.debug("lint JSON failed", exc_info=True)
 
-    output: dict = {"ingest": ingest_data}
+    result: dict = {"ingest": ingest_data}
     if lint_data is not None:
-        output["lint"] = lint_data
+        result["lint"] = lint_data
 
-    print(json.dumps(output, indent=2))
+    print(json.dumps(result, indent=2))
+
+
+# ── search ─────────────────────────────────────────────────────────
 
 
 def cmd_search(args: argparse.Namespace) -> None:
@@ -162,7 +237,7 @@ def cmd_search(args: argparse.Namespace) -> None:
     from kenso.config import KensoConfig
 
     config = KensoConfig.from_env(db_override=getattr(args, "db", None))
-    _log_database(config)
+    log.debug("using %s (%s)", config.database_url, config.database_source)
 
     # Fail early if the database doesn't exist (search is read-only)
     if config.database_url and config.database_url != ":memory:":
@@ -170,9 +245,9 @@ def cmd_search(args: argparse.Namespace) -> None:
 
         db_path = Path(config.database_url)
         if not db_path.is_file():
-            print(
-                f"  Error: Database not found at {config.database_url}\n"
-                "  Run `kenso ingest` first."
+            output(
+                f"{Style.RED}Error: Database not found at {config.database_url}{Style.RESET}\n"
+                f"Run {Style.BOLD}kenso ingest{Style.RESET} first."
             )
             sys.exit(1)
 
@@ -191,17 +266,39 @@ def cmd_search(args: argparse.Namespace) -> None:
                 return
 
             if not results:
-                print("  No results.")
+                header("0 results for " + f'"{args.query}"', db_path=_db_display(args, config))
+                output("No results.")
             else:
+                header(
+                    f'{len(results)} results for "{args.query}"',
+                    db_path=_db_display(args, config),
+                )
                 for r in results:
-                    score = f"{r['score']:.3f}"
+                    score = f"{r['score']:.2f}"
                     stage = r.get("cascade_stage", "")
-                    stage_label = f" [{stage}]" if stage else ""
-                    print(f"  [{score}]{stage_label} {r['file_path']}")
-                    print(f"         {r['title']}")
+                    rel = r.get("relevance", "low")
+
+                    stage_str = f"  {cascade_label(stage)}" if stage else ""
+                    rel_str = f"  {relevance_label(rel)}" if rel else ""
+
+                    output(
+                        f"{Style.BOLD}{score}{Style.RESET}  {r['file_path']}{stage_str}{rel_str}"
+                    )
+
+                    # Section path / title
+                    section = r.get("section_path", "")
+                    title = r.get("title", "")
+                    if section:
+                        output(f"      {Style.DIM}{section}{Style.RESET}")
+                    elif title:
+                        output(f"      {Style.DIM}{title}{Style.RESET}")
+
+                    # Highlight snippet
                     if r.get("highlight"):
-                        print(f"         {r['highlight']}")
-                    print()
+                        snippet = terminal_snippet(r["highlight"])
+                        output(f"      {snippet}")
+
+                    output()  # blank line between results
         finally:
             await backend.shutdown()
 
@@ -236,15 +333,18 @@ def _print_search_json(query: str, results: list[dict], config) -> None:
         }
         items.append(item)
 
-    output = {
+    result = {
         "query": query,
         "total_results": len(items),
         "results": items,
     }
     if results and results[0].get("corrected_query"):
-        output["corrected_query"] = results[0]["corrected_query"]
+        result["corrected_query"] = results[0]["corrected_query"]
 
-    print(json.dumps(output, indent=2))
+    print(json.dumps(result, indent=2))
+
+
+# ── stats ──────────────────────────────────────────────────────────
 
 
 def cmd_stats(args: argparse.Namespace) -> None:
@@ -253,7 +353,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
     from kenso.config import KensoConfig
 
     config = KensoConfig.from_env(db_override=getattr(args, "db", None))
-    _log_database(config)
+    log.debug("using %s (%s)", config.database_url, config.database_source)
 
     # Fail early if the database doesn't exist (stats is read-only)
     if config.database_url and config.database_url != ":memory:":
@@ -261,9 +361,9 @@ def cmd_stats(args: argparse.Namespace) -> None:
 
         db_path = Path(config.database_url)
         if not db_path.is_file():
-            print(
-                f"  Error: Database not found at {config.database_url}\n"
-                "  Run `kenso ingest` first."
+            output(
+                f"{Style.RED}Error: Database not found at {config.database_url}{Style.RESET}\n"
+                f"Run {Style.BOLD}kenso ingest{Style.RESET} first."
             )
             sys.exit(1)
 
@@ -272,22 +372,26 @@ def cmd_stats(args: argparse.Namespace) -> None:
         await backend.startup()
         try:
             s = await backend.stats()
-            print("\n  kenso stats")
-            print(f"  {'─' * 40}")
-            print(f"  Documents: {s['docs']}")
-            print(f"  Chunks:    {s['chunks']}")
-            print(f"  Size:      {s['content_bytes']:,} bytes")
-            print(f"  Links:     {s['links'] or 0}")
-            print(f"  {'─' * 40}")
+
+            header("stats", db_path=_db_display(args, config))
+            output(rule_line(45))
+            output(f"  {'Documents:':<14} {s['docs']:>8}")
+            output(f"  {'Chunks:':<14} {s['chunks']:>8}")
+            output(f"  {'Size:':<14} {human_size(s['content_bytes']):>8}")
+            output(f"  {'Links:':<14} {s['links'] or 0:>8}")
+            output(rule_line(45))
+
             for cat in s["categories"]:
-                print(
-                    f"    {cat['cat'] or '(none)':<20} {cat['docs']} docs, {cat['chunks']} chunks"
-                )
-            print()
+                name = cat["cat"] or "(none)"
+                output(f"  {name:<20} {cat['docs']:>4} docs, {cat['chunks']:>4} chunks")
+            output()
         finally:
             await backend.shutdown()
 
     asyncio.run(_run())
+
+
+# ── lint ───────────────────────────────────────────────────────────
 
 
 def cmd_lint(args: argparse.Namespace) -> None:
@@ -300,11 +404,14 @@ def cmd_lint(args: argparse.Namespace) -> None:
     if args.json:
         print(format_json(result))
     elif args.detail:
-        print(format_detail(result))
+        output(format_detail(result))
     else:
-        print(format_summary(result))
+        output(format_summary(result))
 
     sys.exit(1 if result.errors > 0 else 0)
+
+
+# ── install ────────────────────────────────────────────────────────
 
 
 def cmd_install(args: argparse.Namespace) -> None:
@@ -313,9 +420,9 @@ def cmd_install(args: argparse.Namespace) -> None:
 
     root = find_project_root()
     if root is None:
-        print(
-            "Error: could not find project root. Run from inside a project "
-            "directory (one with .git/, pyproject.toml, etc.)."
+        output(
+            f"{Style.RED}Error: could not find project root.{Style.RESET} "
+            "Run from inside a project directory (one with .git/, pyproject.toml, etc.)."
         )
         sys.exit(1)
 
@@ -335,35 +442,50 @@ def cmd_install(args: argparse.Namespace) -> None:
         if has_codex:
             do_codex = True
         if not do_claude and not do_codex:
-            print(
+            output(
                 "No runtime detected. Use --claude, --codex, or --all to "
                 "specify which runtime to install for."
             )
             sys.exit(1)
 
+    header("install")
+
     if do_claude:
         lines = install_claude(root)
-        print("\n".join(lines))
+        for line in lines:
+            output(line)
 
     if do_codex:
         if do_claude:
-            print()
+            output()
         lines = install_codex(root)
-        print("\n".join(lines))
+        for line in lines:
+            output(line)
 
 
-def _configure_logging(log_level: str = "INFO") -> None:
+# ── Logging & main ─────────────────────────────────────────────────
+
+
+def _configure_logging(log_level: str = "WARNING") -> None:
     """Configure logging based on level string."""
-    level = getattr(logging, log_level.upper(), logging.INFO)
-    logging.basicConfig(level=level)
+    level = getattr(logging, log_level.upper(), logging.WARNING)
+    logging.basicConfig(level=level, force=True)
 
 
 def main() -> None:
-    _configure_logging(os.environ.get("KENSO_LOG_LEVEL", "INFO"))
+    # Default to WARNING; only DEBUG when explicitly requested
+    env_level = os.environ.get("KENSO_LOG_LEVEL", "WARNING")
+    _configure_logging(env_level)
+
     parser = argparse.ArgumentParser(
         prog="kenso", description="Markdown knowledge base for AI agents"
     )
     parser.add_argument("--version", action="version", version=f"kenso {__version__}")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging (equivalent to KENSO_LOG_LEVEL=DEBUG)",
+    )
     sub = parser.add_subparsers(dest="command")
 
     _db_help = "Database path (overrides KENSO_DATABASE_URL and auto-detection)"
@@ -404,6 +526,10 @@ def main() -> None:
     p.add_argument("--all", action="store_true", help="Install for all supported runtimes")
 
     args = parser.parse_args()
+
+    # Apply --debug flag
+    if getattr(args, "debug", False):
+        _configure_logging("DEBUG")
 
     if not args.command:
         parser.print_help()

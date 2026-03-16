@@ -47,7 +47,7 @@ class TestCLIIngest:
         cmd_ingest(_parse_args("ingest", str(tmp_path)))
         captured = capsys.readouterr()
         assert "1 ingested" in captured.out
-        assert "Quality Score:" in captured.out
+        assert "Quality score:" in captured.out
 
     def test_ingest_lint_matches_standalone(self, tmp_path, capsys):
         md = tmp_path / "doc.md"
@@ -61,13 +61,13 @@ class TestCLIIngest:
         from kenso.lint import lint_path
 
         lint_result = lint_path(str(tmp_path))
-        assert f"Quality Score: {lint_result.score}/100" in captured.out
+        assert f"Quality score: {lint_result.score}/100" in captured.out
 
     def test_ingest_empty_dir_no_lint(self, tmp_path, capsys):
         cmd_ingest(_parse_args("ingest", str(tmp_path)))
         captured = capsys.readouterr()
         assert "0 ingested" in captured.out
-        assert "Quality Score:" not in captured.out
+        assert "Quality score:" not in captured.out
 
     def test_ingest_lint_failure_does_not_fail_ingest(self, tmp_path, monkeypatch, capsys):
         md = tmp_path / "doc.md"
@@ -82,7 +82,7 @@ class TestCLIIngest:
         cmd_ingest(_parse_args("ingest", str(tmp_path)))
         captured = capsys.readouterr()
         assert "1 ingested" in captured.out
-        assert "Warning: Could not generate quality summary" in captured.out
+        assert "Could not generate quality summary" in captured.out
 
 
 class TestCLIIngestJSON:
@@ -172,7 +172,7 @@ class TestCLIStats:
     def test_stats_human(self, capsys):
         cmd_stats(_parse_args("stats"))
         captured = capsys.readouterr()
-        assert "kenso stats" in captured.out
+        assert "kenso" in captured.out and "stats" in captured.out
 
 
 class TestCLISearch:
@@ -210,7 +210,7 @@ class TestCLISearch:
         cmd_search(_parse_args("search", "settlement"))
         out = capsys.readouterr().out
         # Human-readable output — should not be JSON
-        assert "[" in out  # score brackets
+        assert "results for" in out  # header
         assert '"query"' not in out
 
     def test_json_output_valid(self, _ingested_docs, capsys):
@@ -296,16 +296,18 @@ class TestCLISearch:
     def test_human_output_shows_cascade_stage(self, _ingested_docs, capsys):
         cmd_search(_parse_args("search", "settlement"))
         out = capsys.readouterr().out
-        # Human-readable output should include [AND], [NEAR], or [OR] labels
-        assert any(f"[{stage}]" in out for stage in ("AND", "NEAR", "OR")), (
+        # Human-readable output should include AND, NEAR, or OR labels
+        assert any(stage in out for stage in ("AND", "NEAR", "OR")), (
             f"Expected cascade stage label in output: {out}"
         )
 
     def test_limit_in_human_mode(self, _ingested_docs, capsys):
         cmd_search(_parse_args("search", "settlement", "--limit", "1"))
         out = capsys.readouterr().out
-        # Count result blocks (each has a score line)
-        score_lines = [line for line in out.splitlines() if line.strip().startswith("[")]
+        # Count result blocks — each has a score (digits followed by dot)
+        import re
+
+        score_lines = [line for line in out.splitlines() if re.match(r"^\d+\.\d+\s", line.strip())]
         assert len(score_lines) <= 1
 
     def test_category_in_human_mode(self, _ingested_docs, capsys):

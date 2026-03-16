@@ -799,10 +799,11 @@ class TestFormatDetail:
         )
         result = LintResult(score=50, files=1, errors=1, warnings=1, info=1, file_results=[fr])
         output = format_detail(result)
-        lines = [line for line in output.split("\n") if line.strip().startswith("KS")]
-        assert "error" in lines[0]
-        assert "warning" in lines[1]
-        assert "info" in lines[2]
+        # Lines containing KS rule codes (may have tree chars and ANSI before them)
+        lines = [line for line in output.split("\n") if "KS0" in line]
+        assert "KS001" in lines[0]  # error first
+        assert "KS003" in lines[1]  # warning second
+        assert "KS009" in lines[2]  # info third
 
 
 class TestFormatIngestSummary:
@@ -818,7 +819,7 @@ class TestFormatIngestSummary:
         output = format_ingest_summary(result)
         assert "Quality Score: 80/100" in output
         assert "1 files with issues" in output
-        assert "KS003" in output
+        assert "missing-tags" in output or "Add tags" in output
         assert "kenso lint --detail" in output
 
     def test_all_clean(self):

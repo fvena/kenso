@@ -757,109 +757,148 @@ def lint_path(root: str, *, chunk_size: int = 4000) -> LintResult:
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
-def format_summary(result: LintResult) -> str:
-    """Format lint result as summary output."""
-    lines = [f"\nScore: {result.score}/100 ({result.files} files)\n"]
-
-    # Collect violation counts per rule
+def _collect_rule_counts(result: LintResult) -> dict[str, tuple[int, str]]:
+    """Return {rule: (file_count, severity)} across all file results."""
     rule_counts: dict[str, int] = {}
+    rule_severity: dict[str, str] = {}
     for fr in result.file_results:
-        seen_rules: set[str] = set()
+        seen: set[str] = set()
         for v in fr.violations:
-            if v.rule not in seen_rules:
+            if v.rule not in seen:
                 rule_counts[v.rule] = rule_counts.get(v.rule, 0) + 1
-                seen_rules.add(v.rule)
+                rule_severity[v.rule] = v.severity
+                seen.add(v.rule)
+    return {r: (rule_counts[r], rule_severity[r]) for r in rule_counts}
 
-    if not rule_counts:
-        lines.append("All checks passed.")
-        return "\n".join(lines)
 
-    # Sort by impact (descending), then rule ID
-    sorted_rules = sorted(
-        rule_counts.keys(),
-        key=lambda r: (-_IMPACT.get(r, 0), r),
+def format_summary(result: LintResult) -> str:
+    """Format lint result as styled summary output."""
+    from kenso.ui import (
+        Style,
+        glyph,
+        rule_line,
+    )
+    from kenso.ui import (
+        severity_glyph as _sg,
     )
 
-    # Build table
-    lines.append("  What to fix first                          Files   Impact")
-    lines.append("  " + "─" * 55)
+    lines: list[str] = []
 
+    # Header
+    lines.append(
+        f"{Style.BRAND}{Style.BOLD}kenso{Style.RESET} {glyph['dot']} lint {result.files} files"
+    )
+    lines.append("")
+    lines.append(f"Score: {Style.BOLD}{result.score}/100{Style.RESET}")
+
+    rc = _collect_rule_counts(result)
+
+    if not rc:
+        lines.append(f"\n{Style.GREEN}All checks passed.{Style.RESET}")
+        return "\n".join(lines)
+
+    sorted_rules = sorted(rc.keys(), key=lambda r: (-_IMPACT.get(r, 0), r))
+
+    lines.append("")
+    lines.append(rule_line(60))
     for rule in sorted_rules:
+        count, sev = rc[rule]
         label = _RULE_LABELS.get(rule, rule)
-        count = rule_counts[rule]
         impact = _IMPACT.get(rule, 0)
         impact_str = f"+{impact}%" if impact else ""
-        lines.append(f"  {label:<37} ({rule}) {count:>3}   {impact_str:>5}")
+        count_str = f"{count} file{'s' if count != 1 else ''}"
+        sg = _sg(sev)
+        lines.append(f"{sg} {label:<40} ({rule}) {count_str:>8} {impact_str:>5}")
+    lines.append(rule_line(60))
 
     lines.append("")
     lines.append(
-        f"  {result.errors} errors · {result.warnings} warnings · {result.info} suggestions"
+        f"{result.errors} errors {glyph['dot']} "
+        f"{result.warnings} warnings {glyph['dot']} "
+        f"{result.info} suggestions"
     )
     lines.append("")
-    lines.append("  Run kenso lint --detail to see per-file results.")
+    lines.append(f"Next {glyph['arrow']} {Style.BOLD}kenso lint --detail{Style.RESET}")
 
     return "\n".join(lines)
 
 
 def format_detail(result: LintResult) -> str:
-    """Format lint result as per-file detail output."""
+    """Format lint result as per-file detail output with tree chars."""
+    from kenso.ui import Style, glyph, rule_line
+    from kenso.ui import severity_glyph as _sg
+
     lines: list[str] = []
+
+    # Header
+    lines.append(
+        f"{Style.BRAND}{Style.BOLD}kenso{Style.RESET} {glyph['dot']} "
+        f"lint {result.files} files (detail)"
+    )
+    lines.append("")
 
     for fr in result.file_results:
         if not fr.violations:
             continue
 
-        lines.append(f"\n{fr.path} (score: {fr.score}/100)")
+        lines.append(
+            f"{Style.BOLD}{fr.path}{Style.RESET} {Style.DIM}(score: {fr.score}/100){Style.RESET}"
+        )
 
-        # Sort by severity then rule ID
         sorted_violations = sorted(
             fr.violations,
             key=lambda v: (_SEVERITY_ORDER.get(v.severity, 9), v.rule),
         )
 
-        for v in sorted_violations:
-            lines.append(f"  {v.rule} {v.severity:<8} {v.name:<20} {v.message}")
+        for i, v in enumerate(sorted_violations):
+            is_last = i == len(sorted_violations) - 1
+            tree = glyph["tree_end"] if is_last else glyph["tree_mid"]
+            sg = _sg(v.severity)
+            lines.append(
+                f"  {tree} {sg} {v.rule} {v.name:<20} {Style.DIM}{v.message}{Style.RESET}"
+            )
 
-    if lines:
         lines.append("")
-    lines.append(f"Score: {result.score}/100 ({result.files} files)")
+
+    lines.append(rule_line(60))
+    lines.append(f"Score: {Style.BOLD}{result.score}/100{Style.RESET} ({result.files} files)")
     lines.append(
-        f"{result.errors} errors · {result.warnings} warnings · {result.info} suggestions"
+        f"{result.errors} errors {glyph['dot']} "
+        f"{result.warnings} warnings {glyph['dot']} "
+        f"{result.info} suggestions"
     )
 
     return "\n".join(lines)
 
 
 def format_ingest_summary(result: LintResult) -> str:
-    """Format lint result as a compact summary for ingest output."""
-    files_with_issues = sum(1 for fr in result.file_results if fr.violations)
+    """Format lint result as a compact summary for ingest output.
 
+    Note: This is no longer called directly — the CLI now uses
+    ``_print_ingest_quality()`` instead. Kept for backward compatibility.
+    """
+    from kenso.ui import glyph
+    from kenso.ui import severity_glyph as _sg
+
+    files_with_issues = sum(1 for fr in result.file_results if fr.violations)
     lines = [f"  Quality Score: {result.score}/100"]
 
-    # Collect violation counts per rule
-    rule_counts: dict[str, int] = {}
-    for fr in result.file_results:
-        seen_rules: set[str] = set()
-        for v in fr.violations:
-            if v.rule not in seen_rules:
-                rule_counts[v.rule] = rule_counts.get(v.rule, 0) + 1
-                seen_rules.add(v.rule)
-
-    if rule_counts:
-        sorted_rules = sorted(
-            rule_counts.keys(),
-            key=lambda r: (-_IMPACT.get(r, 0), r),
-        )
+    rc = _collect_rule_counts(result)
+    if rc:
+        sorted_rules = sorted(rc.keys(), key=lambda r: (-_IMPACT.get(r, 0), r))
         for rule in sorted_rules:
+            count, sev = rc[rule]
             label = _RULE_LABELS.get(rule, rule)
-            count = rule_counts[rule]
             impact = _IMPACT.get(rule, 0)
             impact_str = f"+{impact}%" if impact else ""
-            lines.append(f"    {label:<37} ({rule}) {count:>3}   {impact_str:>5}")
+            count_str = f"{count} file{'s' if count != 1 else ''}"
+            sg = _sg(sev)
+            lines.append(f"  {sg} {label:<40} {count_str:>8} {impact_str:>5}")
 
     if files_with_issues:
         lines.append(
-            f"  {files_with_issues} files with issues. Run kenso lint --detail for specifics."
+            f"  {files_with_issues} files with issues {glyph['dot']} "
+            f"Next {glyph['arrow']} kenso lint --detail"
         )
     else:
         lines.append("  All checks passed.")
