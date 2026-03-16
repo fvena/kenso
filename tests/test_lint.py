@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from kenso.lint import (
     FileResult,
@@ -377,6 +378,168 @@ class TestKS018:
         text = f"---\nrelates_to: {links}\n---\n# Title\n\nContent."
         vs = _check("test.md", text)
         assert not any(v.rule == "KS018" for v in vs)
+
+
+# ── KS019: unlinked-mention ────────────────────────────────────────
+
+
+def _make_title_patterns(entries: list[tuple[str, str]]) -> list[tuple[re.Pattern[str], str, str]]:
+    """Build title_patterns from (title, rel_path) pairs."""
+    patterns = []
+    for title, path in entries:
+        normalized = " ".join(title.split())
+        if len(normalized) <= 3:
+            continue
+        escaped = re.escape(normalized)
+        patterns.append((re.compile(rf"\b{escaped}\b", re.IGNORECASE), normalized, path))
+    return patterns
+
+
+class TestKS019:
+    def test_basic_detection(self):
+        """Doc A body contains doc B's title, no relates_to → KS019 reported."""
+        text = "# Doc A Title\n\nThe settlement process is important for operations."
+        patterns = _make_title_patterns([("settlement process", "ops/settlement.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert any(v.rule == "KS019" and "settlement process" in v.message for v in vs)
+
+    def test_alias_matching(self):
+        """Doc A body contains doc B's alias → KS019 reported."""
+        text = "# Doc A Title\n\nWe handle trade settlement in the pipeline."
+        patterns = _make_title_patterns([("trade settlement", "ops/settlement.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert any(v.rule == "KS019" and "trade settlement" in v.message for v in vs)
+
+    def test_already_linked_not_flagged(self):
+        """Doc A has relates_to to doc B and mentions B's title → NOT reported."""
+        text = (
+            "---\nrelates_to: ops/settlement.md\n---\n"
+            "# Doc A Title\n\nThe settlement process is important."
+        )
+        patterns = _make_title_patterns([("settlement process", "ops/settlement.md")])
+        vs = _check(
+            "docs/a.md",
+            text,
+            all_paths={"docs/a.md", "ops/settlement.md"},
+            title_patterns=patterns,
+        )
+        assert not any(v.rule == "KS019" for v in vs)
+
+    def test_self_reference_not_flagged(self):
+        """Doc A mentions its own title → NOT reported."""
+        text = "# Settlement Process\n\nThe settlement process is described here."
+        patterns = _make_title_patterns([("Settlement Process", "docs/a.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert not any(v.rule == "KS019" for v in vs)
+
+    def test_short_title_not_flagged(self):
+        """Doc B's title is ≤ 3 chars → NOT reported."""
+        patterns = _make_title_patterns([("API", "docs/api.md")])
+        assert patterns == []  # Should be filtered out during pattern building
+
+    def test_code_block_not_flagged(self):
+        """Doc A mentions doc B's title inside a fenced code block → NOT reported."""
+        text = (
+            "# Doc A Title\n\nSome intro text.\n\n"
+            "```python\n# settlement process runs here\nsettle()\n```\n\n"
+            "More text after code."
+        )
+        patterns = _make_title_patterns([("settlement process", "ops/settlement.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert not any(v.rule == "KS019" for v in vs)
+
+    def test_inline_code_not_flagged(self):
+        """Doc A mentions doc B's title inside backticks → NOT reported."""
+        text = "# Doc A Title\n\nRun `settlement process` command to start."
+        patterns = _make_title_patterns([("settlement process", "ops/settlement.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert not any(v.rule == "KS019" for v in vs)
+
+    def test_word_boundary(self):
+        """Title 'settlement' does not match 'presettlement' in body."""
+        text = "# Doc A Title\n\nThe presettlement check runs before close."
+        patterns = _make_title_patterns([("settlement", "ops/settlement.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert not any(v.rule == "KS019" for v in vs)
+
+    def test_case_insensitivity(self):
+        """'Settlement' in body matches title 'settlement lifecycle'."""
+        text = "# Doc A Title\n\nThe Settlement Lifecycle is complex."
+        patterns = _make_title_patterns([("settlement lifecycle", "ops/settlement.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert any(v.rule == "KS019" for v in vs)
+
+    def test_multi_word_phrase(self):
+        """Alias 'trade settlement' matches 'the trade settlement process'."""
+        text = "# Doc A Title\n\nThe trade settlement process is automated."
+        patterns = _make_title_patterns([("trade settlement", "ops/settlement.md")])
+        vs = _check("docs/a.md", text, title_patterns=patterns)
+        assert any(v.rule == "KS019" for v in vs)
+
+    def test_score_three_mentions(self):
+        """File with 3 unlinked mentions loses 3 points."""
+        vs = [Violation("KS019", "warning", "unlinked-mention", "") for _ in range(3)]
+        assert _compute_file_score(vs) == 97
+
+    def test_score_six_mentions_capped(self):
+        """File with 6 unlinked mentions loses max 4 points."""
+        vs = [Violation("KS019", "warning", "unlinked-mention", "") for _ in range(6)]
+        assert _compute_file_score(vs) == 96
+
+    def test_no_mentions_no_output(self, tmp_path):
+        """KS019 doesn't appear when no mentions exist."""
+        (tmp_path / "a.md").write_text(
+            "---\ntags: x, y, z\n---\n# Alpha Document\n\nContent about alpha topic."
+        )
+        (tmp_path / "b.md").write_text(
+            "---\ntags: x, y, z\n---\n# Beta Document\n\nContent about beta topic."
+        )
+        result = lint_path(str(tmp_path))
+        rules = [v.rule for fr in result.file_results for v in fr.violations]
+        assert "KS019" not in rules
+
+
+class TestKS019Integration:
+    def test_summary_output(self, tmp_path):
+        """KS019 appears in summary with correct file count and impact."""
+        (tmp_path / "a.md").write_text(
+            "---\ntags: x, y, z\n---\n# Alpha Document\n\n"
+            "The beta document covers related concepts."
+        )
+        (tmp_path / "b.md").write_text(
+            "---\ntags: x, y, z\n---\n# Beta Document\n\nContent about beta."
+        )
+        result = lint_path(str(tmp_path))
+        output = format_summary(result)
+        assert "KS019" in output
+        assert "+3%" in output
+
+    def test_detail_output(self, tmp_path):
+        """Detail output shows source file, matched text, and target path."""
+        (tmp_path / "a.md").write_text(
+            "---\ntags: x, y, z\n---\n# Alpha Document\n\nThe beta document is referenced here."
+        )
+        (tmp_path / "b.md").write_text(
+            "---\ntags: x, y, z\n---\n# Beta Document\n\nContent about beta."
+        )
+        result = lint_path(str(tmp_path))
+        output = format_detail(result)
+        assert "KS019" in output
+        assert "Beta Document" in output or "beta document" in output.lower()
+        assert "b.md" in output
+
+    def test_with_alias_frontmatter(self, tmp_path):
+        """Alias from frontmatter triggers KS019."""
+        (tmp_path / "a.md").write_text(
+            "---\ntags: x, y, z\n---\n# Alpha Document\n\nWe use CNMV reporting for compliance."
+        )
+        (tmp_path / "b.md").write_text(
+            "---\ntags: x, y, z\naliases:\n  - CNMV reporting\n---\n"
+            "# Regulatory Compliance\n\nContent about compliance."
+        )
+        result = lint_path(str(tmp_path))
+        ks019 = [v for fr in result.file_results for v in fr.violations if v.rule == "KS019"]
+        assert any("CNMV reporting" in v.message for v in ks019)
 
 
 # ── Score calculation ───────────────────────────────────────────────

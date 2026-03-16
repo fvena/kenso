@@ -155,6 +155,7 @@ _IMPACT: dict[str, int] = {
     "KS010": 1,
     "KS014": 1,
     "KS018": 1,
+    "KS019": 3,
 }
 
 _RULE_LABELS: dict[str, str] = {
@@ -176,6 +177,7 @@ _RULE_LABELS: dict[str, str] = {
     "KS016": "Avoid dangling pronouns in sections",
     "KS017": "Remove glob patterns from relates_to",
     "KS018": "Reduce relates_to entries (max 10)",
+    "KS019": "Add missing relates_to links",
 }
 
 
@@ -183,6 +185,7 @@ def _compute_file_score(violations: list[Violation]) -> int:
     score = 100.0
     ks007_count = 0
     ks009_count = 0
+    ks019_count = 0
 
     for v in violations:
         if v.rule in ("KS004", "KS005"):
@@ -198,6 +201,11 @@ def _compute_file_score(violations: list[Violation]) -> int:
             old_total = min(ks009_count * 2, 6)
             ks009_count += 1
             new_total = min(ks009_count * 2, 6)
+            score -= new_total - old_total
+        elif v.rule == "KS019":
+            old_total = min(ks019_count * 1, 4)
+            ks019_count += 1
+            new_total = min(ks019_count * 1, 4)
             score -= new_total - old_total
         elif v.rule in _DEDUCTIONS:
             score -= _DEDUCTIONS[v.rule]
@@ -245,6 +253,15 @@ def _first_content_line(text: str) -> str:
         if stripped and not stripped.startswith("#"):
             return stripped
     return ""
+
+
+def _strip_code(text: str) -> str:
+    """Strip fenced code blocks and inline code from text."""
+    # Strip fenced code blocks (``` or ~~~)
+    result = re.sub(r"^(`{3,}|~{3,}).*?^\1", "", text, flags=re.MULTILINE | re.DOTALL)
+    # Strip inline code
+    result = re.sub(r"`[^`]+`", "", result)
+    return result
 
 
 def _has_yaml() -> bool:
@@ -336,6 +353,7 @@ def _check_file(
     all_categories: list[str],
     chunk_size: int,
     yaml_available: bool,
+    title_patterns: list[tuple[re.Pattern[str], str, str]] | None = None,
 ) -> list[Violation]:
     """Run all lint rules against a single file."""
     violations: list[Violation] = []
@@ -513,6 +531,25 @@ def _check_file(
             )
         )
 
+    # KS019: unlinked-mention
+    if title_patterns:
+        linked_paths = set(relates_paths) if relates_paths else set()
+        clean_body = _strip_code(body)
+        for pattern, matched_text, target_path in title_patterns:
+            if target_path == rel_path:
+                continue
+            if target_path in linked_paths:
+                continue
+            if pattern.search(clean_body):
+                violations.append(
+                    Violation(
+                        "KS019",
+                        "warning",
+                        "unlinked-mention",
+                        f'Body mentions "{matched_text}" \u2192 {target_path}',
+                    )
+                )
+
     # ── Info ────────────────────────────────────────────────────────
 
     # KS009: oversized-section
@@ -643,6 +680,30 @@ def lint_path(root: str, *, chunk_size: int = 4000) -> LintResult:
 
     all_categories = list(category_counts.keys())
 
+    # Build title/alias lookup for KS019 (unlinked-mention)
+    # Each entry: (compiled_regex, display_text, target_rel_path)
+    title_patterns: list[tuple[re.Pattern[str], str, str]] = []
+    for rel, text in file_data:
+        fm, body = parse_frontmatter(text)
+        # Collect title
+        h1 = extract_title(body)
+        fm_title = fm.get("title")
+        doc_title = h1 or (fm_title if isinstance(fm_title, str) else None) or Path(rel).stem
+        # Collect aliases
+        raw_aliases = fm.get("aliases")
+        aliases = [str(a) for a in raw_aliases] if isinstance(raw_aliases, list) else []
+        # Build patterns for title and aliases
+        for label in [doc_title] + aliases:
+            normalized = " ".join(label.split())
+            if len(normalized) <= 3:
+                continue
+            escaped = re.escape(normalized)
+            try:
+                pattern = re.compile(rf"\b{escaped}\b", re.IGNORECASE)
+            except re.error:
+                continue
+            title_patterns.append((pattern, normalized, rel))
+
     # ── Second pass: run rules ──────────────────────────────────────
     file_results: list[FileResult] = []
     total_errors = 0
@@ -660,6 +721,7 @@ def lint_path(root: str, *, chunk_size: int = 4000) -> LintResult:
             all_categories=all_categories,
             chunk_size=chunk_size,
             yaml_available=yaml_available,
+            title_patterns=title_patterns,
         )
 
         file_score = _compute_file_score(violations)
