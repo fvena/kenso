@@ -303,13 +303,92 @@ def _parse_args(*args: str):
     p = sub.add_parser("ingest")
     p.add_argument("path")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--db", type=str, default=None)
 
     p = sub.add_parser("search")
     p.add_argument("query")
     p.add_argument("--json", action="store_true")
     p.add_argument("--limit", type=int, default=5)
     p.add_argument("--category", type=str, default=None)
+    p.add_argument("--db", type=str, default=None)
 
-    sub.add_parser("stats")
+    p = sub.add_parser("stats")
+    p.add_argument("--db", type=str, default=None)
 
     return parser.parse_args(list(args))
+
+
+class TestCLIDbFlag:
+    """Tests for --db flag across commands."""
+
+    def test_ingest_creates_db_at_flag_path(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        db_path = str(tmp_path / "custom.db")
+        md = tmp_path / "doc.md"
+        md.write_text("# Hello\n\nSome content here.\n")
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--db", db_path))
+        assert (tmp_path / "custom.db").is_file()
+
+    def test_search_uses_db_flag(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        db_path = str(tmp_path / "custom.db")
+        md = tmp_path / "docs" / "doc.md"
+        md.parent.mkdir()
+        md.write_text(
+            "---\ntags: [test]\n---\n# Hello World\n\n"
+            "## Overview\n\nThis document contains enough content to be ingested "
+            "properly by the kenso system for search testing purposes.\n"
+        )
+        # Ingest first, then search using same --db path
+        cmd_ingest(_parse_args("ingest", str(md.parent), "--db", db_path))
+        cmd_search(_parse_args("search", "hello", "--db", db_path))
+        out = capsys.readouterr().out
+        assert "No results" not in out
+
+    def test_stats_uses_db_flag(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        db_path = str(tmp_path / "custom.db")
+        md = tmp_path / "doc.md"
+        md.write_text("# Hello\n\nSome content here.\n")
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--db", db_path))
+        cmd_stats(_parse_args("stats", "--db", db_path))
+        out = capsys.readouterr().out
+        assert "Documents:" in out
+
+    def test_db_flag_overrides_env_var(self, tmp_path, monkeypatch, capsys):
+        env_db = str(tmp_path / "env.db")
+        flag_db = str(tmp_path / "flag.db")
+        monkeypatch.setenv("KENSO_DATABASE_URL", env_db)
+        md = tmp_path / "doc.md"
+        md.write_text("# Hello\n\nSome content here.\n")
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--db", flag_db))
+        assert (tmp_path / "flag.db").is_file()
+        assert not (tmp_path / "env.db").exists()
+
+    def test_search_nonexistent_db_fails(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        db_path = str(tmp_path / "nonexistent.db")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_search(_parse_args("search", "anything", "--db", db_path))
+        assert exc_info.value.code == 1
+        out = capsys.readouterr().out
+        assert "Database not found" in out
+        assert "kenso ingest" in out
+
+    def test_stats_nonexistent_db_fails(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        db_path = str(tmp_path / "nonexistent.db")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_stats(_parse_args("stats", "--db", db_path))
+        assert exc_info.value.code == 1
+        out = capsys.readouterr().out
+        assert "Database not found" in out
+
+    def test_without_db_flag_cascade_still_works(self, tmp_path, monkeypatch, capsys):
+        """Backward compat: without --db, env var cascade still works."""
+        db_path = str(tmp_path / "env.db")
+        monkeypatch.setenv("KENSO_DATABASE_URL", db_path)
+        md = tmp_path / "doc.md"
+        md.write_text("# Hello\n\nSome content here.\n")
+        cmd_ingest(_parse_args("ingest", str(tmp_path)))
+        assert (tmp_path / "env.db").is_file()

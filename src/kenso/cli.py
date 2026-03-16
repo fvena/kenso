@@ -27,7 +27,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     from kenso.config import KensoConfig
     from kenso.server import mcp
 
-    config = KensoConfig.from_env()
+    config = KensoConfig.from_env(db_override=getattr(args, "db", None))
     _log_database(config)
 
     transport = config.transport
@@ -43,11 +43,11 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     from kenso.config import KensoConfig
     from kenso.ingest import ingest_path
 
-    config = KensoConfig.from_env()
+    config = KensoConfig.from_env(db_override=getattr(args, "db", None))
     _log_database(config)
 
-    # Ensure .kenso/ directory exists for local project databases
-    if config.database_url and config.database_url.endswith(".kenso/docs.db"):
+    # Ensure parent directory exists for the database
+    if config.database_url and config.database_url != ":memory:":
         os.makedirs(os.path.dirname(config.database_url), exist_ok=True)
 
     async def _run():
@@ -162,8 +162,20 @@ def cmd_search(args: argparse.Namespace) -> None:
     from kenso.backend import Backend
     from kenso.config import KensoConfig
 
-    config = KensoConfig.from_env()
+    config = KensoConfig.from_env(db_override=getattr(args, "db", None))
     _log_database(config)
+
+    # Fail early if the database doesn't exist (search is read-only)
+    if config.database_url and config.database_url != ":memory:":
+        from pathlib import Path
+
+        db_path = Path(config.database_url)
+        if not db_path.is_file():
+            print(
+                f"  Error: Database not found at {config.database_url}\n"
+                "  Run `kenso ingest` first."
+            )
+            sys.exit(1)
 
     async def _run():
         backend = Backend(config)
@@ -237,8 +249,20 @@ def cmd_stats(args: argparse.Namespace) -> None:
     from kenso.backend import Backend
     from kenso.config import KensoConfig
 
-    config = KensoConfig.from_env()
+    config = KensoConfig.from_env(db_override=getattr(args, "db", None))
     _log_database(config)
+
+    # Fail early if the database doesn't exist (stats is read-only)
+    if config.database_url and config.database_url != ":memory:":
+        from pathlib import Path
+
+        db_path = Path(config.database_url)
+        if not db_path.is_file():
+            print(
+                f"  Error: Database not found at {config.database_url}\n"
+                "  Run `kenso ingest` first."
+            )
+            sys.exit(1)
 
     async def _run():
         backend = Backend(config)
@@ -339,13 +363,17 @@ def main() -> None:
     parser.add_argument("--version", action="version", version=f"kenso {__version__}")
     sub = parser.add_subparsers(dest="command")
 
+    _db_help = "Database path (overrides KENSO_DATABASE_URL and auto-detection)"
+
     # serve
-    sub.add_parser("serve", help="Start MCP server")
+    p = sub.add_parser("serve", help="Start MCP server")
+    p.add_argument("--db", type=str, default=None, help=_db_help)
 
     # ingest
     p = sub.add_parser("ingest", help="Ingest markdown files")
     p.add_argument("path", help="File or directory to ingest")
     p.add_argument("--json", action="store_true", help="Output as JSON")
+    p.add_argument("--db", type=str, default=None, help=_db_help)
 
     # search
     p = sub.add_parser("search", help="Search documents")
@@ -353,9 +381,11 @@ def main() -> None:
     p.add_argument("--json", action="store_true", help="Output as JSON")
     p.add_argument("--limit", type=int, default=5, help="Max results (default 5)")
     p.add_argument("--category", type=str, default=None, help="Filter by category")
+    p.add_argument("--db", type=str, default=None, help=_db_help)
 
     # stats
-    sub.add_parser("stats", help="Database statistics")
+    p = sub.add_parser("stats", help="Database statistics")
+    p.add_argument("--db", type=str, default=None, help=_db_help)
 
     # lint
     p = sub.add_parser("lint", help="Lint markdown files for retrieval quality")

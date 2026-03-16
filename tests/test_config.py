@@ -87,6 +87,26 @@ class TestKensoConfigFromEnv:
             cfg = KensoConfig.from_env()
             assert cfg.transport == t
 
+    def test_db_override_wins_over_env(self, monkeypatch):
+        monkeypatch.setenv("KENSO_DATABASE_URL", "/tmp/env.db")
+        cfg = KensoConfig.from_env(db_override="/tmp/flag.db")
+        assert cfg.database_url == "/tmp/flag.db"
+        assert cfg.database_source == "--db flag"
+
+    def test_db_override_wins_over_local(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        (tmp_path / ".kenso").mkdir()
+        monkeypatch.chdir(tmp_path)
+        cfg = KensoConfig.from_env(db_override="/tmp/flag.db")
+        assert cfg.database_url == "/tmp/flag.db"
+        assert cfg.database_source == "--db flag"
+
+    def test_db_override_resolves_relative_path(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        monkeypatch.chdir(tmp_path)
+        cfg = KensoConfig.from_env(db_override="my.db")
+        assert cfg.database_url == str(tmp_path / "my.db")
+
     def test_numeric_settings(self, monkeypatch):
         monkeypatch.setenv("KENSO_CHUNK_SIZE", "8000")
         monkeypatch.setenv("KENSO_CHUNK_OVERLAP", "100")

@@ -9,16 +9,20 @@ from pathlib import Path
 __all__ = ["KensoConfig"]
 
 
-def _resolve_db_url() -> tuple[str, str]:
+def _resolve_db_url(db_override: str | None = None) -> tuple[str, str]:
     """Resolve database path with local-first cascade.
 
     Returns (db_url, source) where source describes why this path was chosen.
     Cascade order:
-    1. KENSO_DATABASE_URL env var — explicit override
-    2. .kenso/docs.db in cwd — project-local
-    3. ~/.local/share/kenso/docs.db — global fallback
-    4. .kenso/docs.db in cwd — default for new projects
+    1. --db CLI flag — highest priority override
+    2. KENSO_DATABASE_URL env var — explicit override
+    3. .kenso/docs.db in cwd — project-local
+    4. ~/.local/share/kenso/docs.db — global fallback
+    5. .kenso/docs.db in cwd — default for new projects
     """
+    if db_override:
+        return str(Path(db_override).resolve()), "--db flag"
+
     env_url = os.environ.get("KENSO_DATABASE_URL")
     if env_url:
         return env_url, "KENSO_DATABASE_URL"
@@ -54,9 +58,9 @@ class KensoConfig:
     log_level: str = "INFO"
 
     @classmethod
-    def from_env(cls) -> KensoConfig:
+    def from_env(cls, *, db_override: str | None = None) -> KensoConfig:
         """Load config from KENSO_* environment variables."""
-        db_url, db_source = _resolve_db_url()
+        db_url, db_source = _resolve_db_url(db_override)
         transport = os.environ.get("KENSO_TRANSPORT", "stdio")
         host = os.environ.get("KENSO_HOST", "127.0.0.1")
         port = os.environ.get("KENSO_PORT", "8000")
