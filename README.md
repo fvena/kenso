@@ -459,6 +459,18 @@ kenso lint <path> --detail     # per-file violations
 kenso lint <path> --json       # JSON output for CI integration
 ```
 
+### kenso install
+
+Install kenso slash commands into your LLM runtime's directory structure.
+
+```bash
+kenso install --claude    # install for Claude Code
+kenso install --codex     # install for Codex CLI
+kenso install --all       # install for all supported runtimes
+```
+
+If no flag is given, kenso auto-detects which runtimes are present (`.claude/` or `.codex/` directories) and installs for those. Running install again is safe — files are overwritten with the latest version and the output shows what changed.
+
 ### kenso stats
 
 Show database statistics: document count, chunk count, storage size, links, and breakdown by category.

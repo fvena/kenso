@@ -1,4 +1,4 @@
-"""CLI: serve, ingest, search, stats, lint."""
+"""CLI: serve, ingest, search, stats, lint, install."""
 
 from __future__ import annotations
 
@@ -234,6 +234,51 @@ def cmd_lint(args: argparse.Namespace) -> None:
     sys.exit(1 if result.errors > 0 else 0)
 
 
+def cmd_install(args: argparse.Namespace) -> None:
+    """Install kenso commands into LLM runtime directories."""
+    from kenso.install import find_project_root, install_claude, install_codex
+
+    root = find_project_root()
+    if root is None:
+        print(
+            "Error: could not find project root. Run from inside a project "
+            "directory (one with .git/, pyproject.toml, etc.)."
+        )
+        sys.exit(1)
+
+    do_claude = args.claude
+    do_codex = args.codex
+    do_all = args.all
+
+    if do_all:
+        do_claude = do_codex = True
+
+    # Auto-detect if no flags given
+    if not do_claude and not do_codex:
+        has_claude = (root / ".claude").is_dir()
+        has_codex = (root / ".codex").is_dir()
+        if has_claude:
+            do_claude = True
+        if has_codex:
+            do_codex = True
+        if not do_claude and not do_codex:
+            print(
+                "No runtime detected. Use --claude, --codex, or --all to "
+                "specify which runtime to install for."
+            )
+            sys.exit(1)
+
+    if do_claude:
+        lines = install_claude(root)
+        print("\n".join(lines))
+
+    if do_codex:
+        if do_claude:
+            print()
+        lines = install_codex(root)
+        print("\n".join(lines))
+
+
 def _configure_logging(log_level: str = "INFO") -> None:
     """Configure logging based on level string."""
     level = getattr(logging, log_level.upper(), logging.INFO)
@@ -270,6 +315,12 @@ def main() -> None:
     group.add_argument("--detail", action="store_true", help="Show per-file violations")
     group.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # install
+    p = sub.add_parser("install", help="Install kenso commands for an LLM runtime")
+    p.add_argument("--claude", action="store_true", help="Install for Claude Code")
+    p.add_argument("--codex", action="store_true", help="Install for Codex CLI")
+    p.add_argument("--all", action="store_true", help="Install for all supported runtimes")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -282,4 +333,5 @@ def main() -> None:
         "search": cmd_search,
         "stats": cmd_stats,
         "lint": cmd_lint,
+        "install": cmd_install,
     }[args.command](args)

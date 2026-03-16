@@ -48,6 +48,9 @@ kenso = "kenso.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/kenso"]
 
+[tool.hatch.build]
+artifacts = ["src/kenso/commands/**/*.md"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 99
