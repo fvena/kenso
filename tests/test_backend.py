@@ -589,6 +589,30 @@ class TestBackendIngestFile:
         results = await backend.search("how does process work")
         assert len(results) >= 1
 
+    async def test_ingest_with_predicted_queries(self, backend):
+        await backend.ingest_file(
+            "test.md",
+            [{"title": "Test", "content": "Rate limiting documentation", "section_path": "Test"}],
+            title="Test",
+            category="general",
+            audience="all",
+            predicted_queries=["rate limit config", "429 too many requests", "throttle setup"],
+        )
+        results = await backend.search("throttle setup")
+        assert len(results) >= 1
+
+    async def test_ingest_without_predicted_queries(self, backend):
+        """Missing predicted_queries should not affect behavior."""
+        await backend.ingest_file(
+            "test.md",
+            [{"title": "Test", "content": "Some content", "section_path": "Test"}],
+            title="Test",
+            category="general",
+            audience="all",
+        )
+        results = await backend.search("Some content")
+        assert len(results) >= 1
+
     async def test_ingest_replaces_existing(self, backend):
         await backend.ingest_file(
             "test.md",

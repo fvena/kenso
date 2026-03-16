@@ -640,6 +640,8 @@ async def ingest_path(
             aliases = [str(a) for a in raw_aliases] if isinstance(raw_aliases, list) else None
             raw_answers = frontmatter.get("answers")
             answers = [str(a) for a in raw_answers] if isinstance(raw_answers, list) else None
+            raw_pq = frontmatter.get("predicted_queries")
+            predicted_queries = [str(q) for q in raw_pq] if isinstance(raw_pq, list) else None
             fm_description = frontmatter.get("description")
             fm_description = (
                 fm_description.strip()
@@ -657,6 +659,7 @@ async def ingest_path(
                 content_hash=digest,
                 aliases=aliases,
                 answers=answers,
+                predicted_queries=predicted_queries,
                 description=fm_description,
             )
 

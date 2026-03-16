@@ -428,6 +428,7 @@ class TestIngestPath:
         (tmp_path / "doc.md").write_text(
             "---\ntitle: My Title\ncategory: guides\ntags:\n  - python\n  - testing\n"
             "aliases:\n  - alt name\nanswers:\n  - How to test?\n"
+            "predicted_queries:\n  - python test setup\n  - how to run tests\n"
             "relates_to:\n  - path: other.md\n    relation: feeds_into\n---\n\n"
             "# My Title\n\nThis is a document with frontmatter metadata for testing purposes."
         )

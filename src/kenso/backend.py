@@ -880,6 +880,7 @@ class Backend:
         content_hash: str | None = None,
         aliases: list[str] | None = None,
         answers: list[str] | None = None,
+        predicted_queries: list[str] | None = None,
         description: str | None = None,
     ) -> int:
         self._invalidate_term_dictionary()
@@ -892,6 +893,8 @@ class Backend:
                 sc_parts.append(f"Also known as: {', '.join(aliases)}")
             if answers:
                 sc_parts.append(f"Questions this document answers: {' | '.join(answers)}")
+            if predicted_queries:
+                sc_parts.append(f"Predicted search queries: {' | '.join(predicted_queries)}")
             if description:
                 sc_parts.append(description)
             if tags:
