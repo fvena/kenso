@@ -12,7 +12,21 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from kenso.config import KensoConfig
 
-__all__ = ["Backend", "STOP_WORDS", "_load_synonyms", "_apply_synonyms"]
+__all__ = [
+    "Backend",
+    "RELEVANCE_FLOOR_SCORE",
+    "RELEVANCE_HIGH_RATIO",
+    "RELEVANCE_MEDIUM_RATIO",
+    "STOP_WORDS",
+    "_assign_relevance",
+    "_load_synonyms",
+    "_apply_synonyms",
+]
+
+# ── Relevance constants ──────────────────────────────────────────────
+RELEVANCE_HIGH_RATIO = 0.6
+RELEVANCE_MEDIUM_RATIO = 0.3
+RELEVANCE_FLOOR_SCORE = 3.0
 
 log = logging.getLogger("kenso")
 
@@ -255,11 +269,14 @@ def _to_fts5_queries(
     text: str,
     *,
     synonym_groups: list[list[str]] | None = None,
-) -> list[str]:
+) -> list[tuple[str, str]]:
     """Build a cascade of FTS5 queries from broad to narrow.
 
     Strategy: AND (all terms) → NEAR (terms within 10 tokens) → OR (any term).
     Falls through to the next if insufficient results.
+
+    Returns a list of ``(fts_query, stage)`` tuples where *stage* is one of
+    ``"AND"``, ``"NEAR"``, or ``"OR"``.
 
     When *synonym_groups* is ``None`` (the default), groups are loaded lazily
     from the synonym file on disk.  Pass an explicit list (even ``[]``) to
@@ -267,7 +284,7 @@ def _to_fts5_queries(
     """
     words = text.split()
     if not words:
-        return ['""']
+        return [('""', "AND")]
 
     # Filter stop words (keep all if everything is a stop word)
     filtered = [w for w in words if w.lower() not in STOP_WORDS]
@@ -300,7 +317,7 @@ def _to_fts5_queries(
                     safe_items.append(f'"{cleaned}"')
 
     if not safe_items:
-        return ['""']
+        return [('""', "AND")]
 
     # Flatten for counting and OR stage
     flat: list[str] = []
@@ -314,14 +331,14 @@ def _to_fts5_queries(
     if len(flat) == 1 and len(safe_items) == 1 and isinstance(safe_items[0], str):
         first_raw = syn_items[0] if isinstance(syn_items[0], str) else syn_items[0][0]
         cleaned = _FTS5_SPECIAL.sub("", first_raw)
-        queries = [flat[0]]
+        queries: list[tuple[str, str]] = [(flat[0], "AND")]
         if " " not in text and len(cleaned) >= 3:
-            queries.append(f'"{cleaned}"*')
+            queries.append((f'"{cleaned}"*', "AND"))
         return queries
 
     # Single synonym group only → just an OR query
     if len(safe_items) == 1 and isinstance(safe_items[0], list):
-        return [" OR ".join(safe_items[0])]
+        return [(" OR ".join(safe_items[0]), "OR")]
 
     # -- AND stage: synonym groups become parenthesised OR sub-expressions ---
     and_parts: list[str] = []
@@ -330,19 +347,48 @@ def _to_fts5_queries(
             and_parts.append(f"({' OR '.join(si)})" if len(si) > 1 else si[0])
         else:
             and_parts.append(si)
-    queries = [" AND ".join(and_parts)]
+    queries = [(" AND ".join(and_parts), "AND")]
 
     # -- NEAR stage: use first variant of each synonym group ----------------
     near_parts: list[str] = []
     for si in safe_items:
         near_parts.append(si[0] if isinstance(si, list) else si)
     if 2 <= len(near_parts) <= 4:
-        queries.append(f"NEAR({' '.join(near_parts)}, 10)")
+        queries.append((f"NEAR({' '.join(near_parts)}, 10)", "NEAR"))
 
     # -- OR stage: flat list of every variant --------------------------------
-    queries.append(" OR ".join(flat))
+    queries.append((" OR ".join(flat), "OR"))
 
     return queries
+
+
+def _assign_relevance(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tag each result with a ``relevance`` hint based on score distribution.
+
+    - ``"high"``: score >= 60% of the best score
+    - ``"medium"``: score >= 30% of the best score
+    - ``"low"``: score < 30% of the best score, or all scores below floor
+    """
+    if not results:
+        return results
+
+    best_score = results[0]["score"]
+
+    for r in results:
+        if best_score < RELEVANCE_FLOOR_SCORE:
+            r["relevance"] = "low"
+        elif best_score > 0:
+            ratio = r["score"] / best_score
+            if ratio >= RELEVANCE_HIGH_RATIO:
+                r["relevance"] = "high"
+            elif ratio >= RELEVANCE_MEDIUM_RATIO:
+                r["relevance"] = "medium"
+            else:
+                r["relevance"] = "low"
+        else:
+            r["relevance"] = "low"
+
+    return results
 
 
 class Backend:
@@ -432,6 +478,9 @@ class Backend:
 
         # Truncate to requested limit
         results = results[:limit]
+
+        # Assign relevance hints based on score distribution
+        results = _assign_relevance(results)
 
         # Fix 4.4: Enrich with tags and related count
         results = await self._enrich_metadata(results)
@@ -542,12 +591,18 @@ class Backend:
         fts_queries = _to_fts5_queries(query)
         min_results = min(3, limit)
 
-        for fts_query in fts_queries:
+        results: list[dict[str, Any]] = []
+        stage = "OR"  # default fallback
+        for fts_query, query_stage in fts_queries:
             results = await self._execute_fts(fts_query, category=category, limit=limit)
+            stage = query_stage
             if len(results) >= min_results:
-                return results
+                break
 
-        return results  # Return whatever the last (broadest) query found
+        for r in results:
+            r["cascade_stage"] = stage
+
+        return results
 
     async def _execute_fts(
         self,

@@ -7,6 +7,7 @@ import pytest
 from kenso.backend import (
     Backend,
     _apply_synonyms,
+    _assign_relevance,
     _expand_compound_terms,
     _expand_compound_word,
     _load_synonyms,
@@ -97,31 +98,39 @@ class TestExpandCompoundTerms:
 
 class TestToFts5Queries:
     def test_empty_input(self):
-        assert _to_fts5_queries("") == ['""']
+        assert _to_fts5_queries("") == [('""', "AND")]
 
     def test_single_word(self):
         queries = _to_fts5_queries("settlement")
         assert len(queries) >= 1
-        assert '"settlement"' in queries[0]
+        fts_query, stage = queries[0]
+        assert '"settlement"' in fts_query
+        assert stage == "AND"
 
     def test_multiple_words(self):
         queries = _to_fts5_queries("trade settlement")
-        assert any("AND" in q for q in queries)
-        assert any("OR" in q for q in queries)
+        fts_queries = [q for q, _s in queries]
+        stages = [s for _q, s in queries]
+        assert any("AND" in q for q in fts_queries)
+        assert any("OR" in q for q in fts_queries)
+        assert "AND" in stages
+        assert "OR" in stages
 
     def test_special_characters_stripped(self):
         queries = _to_fts5_queries("hello* (world)")
-        for q in queries:
+        for q, _s in queries:
             assert "*" not in q or q.endswith("*")  # prefix allowed
             assert "(" not in q.replace("NEAR(", "")
 
     def test_two_to_four_words_get_near(self):
         queries = _to_fts5_queries("trade settlement lifecycle")
-        assert any("NEAR" in q for q in queries)
+        stages = [s for _q, s in queries]
+        assert "NEAR" in stages
 
     def test_five_words_no_near(self):
         queries = _to_fts5_queries("alpha beta gamma delta epsilon")
-        assert not any("NEAR" in q for q in queries)
+        stages = [s for _q, s in queries]
+        assert "NEAR" not in stages
 
     def test_stop_words_filtered(self):
         q1 = _to_fts5_queries("How do I configure logging")
@@ -131,9 +140,17 @@ class TestToFts5Queries:
     def test_all_stop_words_kept(self):
         """A query of only stop words should NOT be filtered to empty."""
         queries = _to_fts5_queries("how do I")
-        assert queries != ['""']
+        assert queries != [('""', "AND")]
         # All words should be kept since they're all stop words
-        assert any("how" in q.lower() for q in queries)
+        assert any("how" in q.lower() for q, _s in queries)
+
+    def test_returns_stage_labels(self):
+        """Each query in the cascade is tagged with its stage label."""
+        queries = _to_fts5_queries("trade settlement", synonym_groups=[])
+        stages = [s for _q, s in queries]
+        # Should have AND and OR at minimum
+        assert stages[0] == "AND"
+        assert stages[-1] == "OR"
 
 
 # ── Backend with in-memory SQLite ────────────────────────────────────
@@ -446,6 +463,139 @@ class TestBackendReranking:
         results = await backend.search("unique special")
         # Should work fine with a single result (no reranking needed)
         assert len(results) >= 1
+
+
+class TestAssignRelevance:
+    def test_empty_results(self):
+        assert _assign_relevance([]) == []
+
+    def test_single_high_score_result(self):
+        results = [{"score": 10.0}]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "high"
+
+    def test_single_result_below_floor(self):
+        results = [{"score": 1.0}]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "low"
+
+    def test_distribution(self):
+        results = [
+            {"score": 10.0},
+            {"score": 7.0},  # 70% → high
+            {"score": 4.0},  # 40% → medium
+            {"score": 2.0},  # 20% → low
+        ]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "high"
+        assert results[1]["relevance"] == "high"
+        assert results[2]["relevance"] == "medium"
+        assert results[3]["relevance"] == "low"
+
+    def test_absolute_floor_overrides_all(self):
+        results = [
+            {"score": 2.5},
+            {"score": 2.0},
+            {"score": 1.5},
+        ]
+        _assign_relevance(results)
+        assert all(r["relevance"] == "low" for r in results)
+
+    def test_boundary_at_sixty_percent(self):
+        results = [
+            {"score": 10.0},
+            {"score": 6.0},  # exactly 60% → high
+            {"score": 5.99},  # just below → medium
+        ]
+        _assign_relevance(results)
+        assert results[1]["relevance"] == "high"
+        assert results[2]["relevance"] == "medium"
+
+    def test_boundary_at_thirty_percent(self):
+        results = [
+            {"score": 10.0},
+            {"score": 3.0},  # exactly 30% → medium
+            {"score": 2.99},  # just below → low
+        ]
+        _assign_relevance(results)
+        assert results[1]["relevance"] == "medium"
+        assert results[2]["relevance"] == "low"
+
+
+class TestCascadeStage:
+    async def test_search_results_have_cascade_stage(self, backend):
+        await backend.ingest_file(
+            "test.md",
+            [
+                {
+                    "title": "Test Doc",
+                    "content": "Settlement lifecycle overview",
+                    "section_path": "Test",
+                }
+            ],
+            title="Test Doc",
+            category="finance",
+            audience="all",
+        )
+        results = await backend.search("settlement")
+        assert len(results) >= 1
+        for r in results:
+            assert "cascade_stage" in r
+            assert r["cascade_stage"] in ("AND", "NEAR", "OR")
+
+    async def test_search_results_have_relevance(self, backend):
+        await backend.ingest_file(
+            "test.md",
+            [
+                {
+                    "title": "Test Doc",
+                    "content": "Settlement lifecycle overview",
+                    "section_path": "Test",
+                }
+            ],
+            title="Test Doc",
+            category="finance",
+            audience="all",
+        )
+        results = await backend.search("settlement")
+        assert len(results) >= 1
+        for r in results:
+            assert "relevance" in r
+            assert r["relevance"] in ("high", "medium", "low")
+
+    async def test_or_fallback_stage(self, backend):
+        """A query with uncommon terms that only partially match should fall to OR."""
+        await backend.ingest_file(
+            "alpha.md",
+            [
+                {
+                    "title": "Alpha",
+                    "content": "Alpha particle physics document",
+                    "section_path": "Alpha",
+                }
+            ],
+            title="Alpha",
+            category="science",
+            audience="all",
+        )
+        await backend.ingest_file(
+            "beta.md",
+            [
+                {
+                    "title": "Beta",
+                    "content": "Beta testing methodology document",
+                    "section_path": "Beta",
+                }
+            ],
+            title="Beta",
+            category="tech",
+            audience="all",
+        )
+        # "alpha beta" AND would require both terms in same doc — neither has both
+        results = await backend.search("alpha beta")
+        assert len(results) >= 1
+        # Should fall through to OR since no single doc has both terms
+        assert results[0]["cascade_stage"] in ("NEAR", "OR")
 
 
 class TestBackendListCategories:
@@ -824,26 +974,29 @@ class TestApplySynonyms:
 class TestToFts5QueriesWithSynonyms:
     def test_synonym_in_and_query(self):
         queries = _to_fts5_queries("deploy k8s", synonym_groups=SAMPLE_GROUPS)
-        and_query = queries[0]
+        and_query, stage = queries[0]
+        assert stage == "AND"
         assert "AND" in and_query
         assert '"kubernetes" OR "k8s" OR "kube"' in and_query
 
     def test_single_synonym_term(self):
         queries = _to_fts5_queries("k8s", synonym_groups=SAMPLE_GROUPS)
+        fts_queries = [q for q, _s in queries]
         # Single synonym group → OR query of all variants
-        assert any("kubernetes" in q for q in queries)
-        assert any("k8s" in q for q in queries)
+        assert any("kubernetes" in q for q in fts_queries)
+        assert any("k8s" in q for q in fts_queries)
 
     def test_no_synonym_file_same_as_before(self):
         """With empty synonym groups, output matches original behavior."""
         q_with = _to_fts5_queries("trade settlement", synonym_groups=[])
         q_without = _to_fts5_queries("trade settlement", synonym_groups=[])
         assert q_with == q_without
-        assert any("AND" in q for q in q_with)
+        stages = [s for _q, s in q_with]
+        assert "AND" in stages
 
     def test_multi_word_synonym_in_query(self):
         queries = _to_fts5_queries("pull request review", synonym_groups=SAMPLE_GROUPS)
-        and_query = queries[0]
+        and_query, _stage = queries[0]
         # "pull request" should be expanded to its synonym group
         assert "pr" in and_query.lower()
         # "review" should remain as a plain term
@@ -851,7 +1004,7 @@ class TestToFts5QueriesWithSynonyms:
 
     def test_synonyms_case_insensitive(self):
         queries = _to_fts5_queries("Deploy JS app", synonym_groups=SAMPLE_GROUPS)
-        and_query = queries[0]
+        and_query, _stage = queries[0]
         assert "javascript" in and_query.lower()
 
 

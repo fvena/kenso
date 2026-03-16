@@ -39,6 +39,15 @@ If the query type suggests a specific category, add the filter:
 kenso search "<terms>" --json --limit 5 --category <category>
 ```
 
+#### Evaluating results
+
+Check the `cascade_stage` and `relevance` fields in search results:
+- Results from the `AND` stage with `high` relevance are strong matches
+- Results from the `OR` stage with `low` relevance are likely noise — do not
+  use them as sources for your answer
+- If all results have `low` relevance, tell the user the KB doesn't cover
+  this topic instead of synthesizing from weak matches
+
 If the first search returns no results or irrelevant results, try:
 - Different terms (synonyms, more specific, more general)
 - Removing the category filter

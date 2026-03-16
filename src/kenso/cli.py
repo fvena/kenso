@@ -196,7 +196,9 @@ def cmd_search(args: argparse.Namespace) -> None:
             else:
                 for r in results:
                     score = f"{r['score']:.3f}"
-                    print(f"  [{score}] {r['file_path']}")
+                    stage = r.get("cascade_stage", "")
+                    stage_label = f" [{stage}]" if stage else ""
+                    print(f"  [{score}]{stage_label} {r['file_path']}")
                     print(f"         {r['title']}")
                     if r.get("highlight"):
                         print(f"         {r['highlight']}")
@@ -230,6 +232,8 @@ def _print_search_json(query: str, results: list[dict], config) -> None:
             "preview": _build_snippet(r, query, match_source, preview),
             "snippet": r.get("highlight", ""),
             "related_count": r.get("related_count", 0),
+            "cascade_stage": r.get("cascade_stage"),
+            "relevance": r.get("relevance", "low"),
         }
         items.append(item)
 

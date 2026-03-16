@@ -236,8 +236,24 @@ class TestCLISearch:
             "preview",
             "snippet",
             "related_count",
+            "cascade_stage",
+            "relevance",
         ):
             assert key in r, f"Missing key: {key}"
+
+    def test_cascade_stage_values(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json"))
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        for r in data["results"]:
+            assert r["cascade_stage"] in ("AND", "NEAR", "OR", None)
+
+    def test_relevance_values(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json"))
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        for r in data["results"]:
+            assert r["relevance"] in ("high", "medium", "low")
 
     def test_limit(self, _ingested_docs, capsys):
         cmd_search(_parse_args("search", "settlement", "--json", "--limit", "1"))
@@ -276,6 +292,14 @@ class TestCLISearch:
         out = capsys.readouterr().out
         # stdout must be pure parseable JSON
         json.loads(out)
+
+    def test_human_output_shows_cascade_stage(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement"))
+        out = capsys.readouterr().out
+        # Human-readable output should include [AND], [NEAR], or [OR] labels
+        assert any(f"[{stage}]" in out for stage in ("AND", "NEAR", "OR")), (
+            f"Expected cascade stage label in output: {out}"
+        )
 
     def test_limit_in_human_mode(self, _ingested_docs, capsys):
         cmd_search(_parse_args("search", "settlement", "--limit", "1"))

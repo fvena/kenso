@@ -233,6 +233,8 @@ async def search_docs(
             "content_preview": _build_snippet(r, query, match_source, preview),
             "match_source": match_source,
             "score": round(float(r["score"]), 4),
+            "cascade_stage": r.get("cascade_stage"),
+            "relevance": r.get("relevance", "low"),
         }
         if r.get("tags"):
             item["tags"] = r["tags"]
@@ -332,6 +334,8 @@ async def search_multi(
             "content_preview": _build_snippet(r, combined_query, match_source, preview),
             "match_source": match_source,
             "score": round(rrf_score, 4),
+            "cascade_stage": r.get("cascade_stage"),
+            "relevance": r.get("relevance", "low"),
         }
         if r.get("tags"):
             item["tags"] = r["tags"]
