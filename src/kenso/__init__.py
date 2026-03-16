@@ -1,3 +1,3 @@
 """kenso — Minimal MCP server for searchable Markdown knowledge bases."""
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"

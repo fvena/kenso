@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.3.0 (2026-03-16)
+
+### Features
+
+- **ingest**: Add predicted_queries frontmatter field for vocabulary bridging
+  ([`e8cb613`](https://github.com/fvena/kenso/commit/e8cb613d414151f705c43eb7f0366d7582a46ccb))
+
+- **search**: Detect unlinked mentions for automatic relates_to suggestions
+  ([`fc8e8b0`](https://github.com/fvena/kenso/commit/fc8e8b0e9dee7c5bd255e46c4c3b0caa0466fe8a))
+
+
 ## v1.2.0 (2026-03-15)
 
 ### Features
