@@ -63,7 +63,7 @@ class KensoConfig:
     search_limit_max: int = 20
 
     # Logging
-    log_level: str = "INFO"
+    log_level: str = "WARNING"
 
     @classmethod
     def from_env(
@@ -81,7 +81,7 @@ class KensoConfig:
         chunk_size = int(os.environ.get("KENSO_CHUNK_SIZE", "4000"))
         chunk_overlap = int(os.environ.get("KENSO_CHUNK_OVERLAP", "0"))
         limit_max = int(os.environ.get("KENSO_SEARCH_LIMIT_MAX", "20"))
-        log_level = os.environ.get("KENSO_LOG_LEVEL", "INFO").upper()
+        log_level = os.environ.get("KENSO_LOG_LEVEL", "WARNING").upper()
 
         if transport not in ("stdio", "sse", "streamable-http"):
             raise ValueError(f"Invalid transport: {transport!r}")

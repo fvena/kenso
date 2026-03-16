@@ -19,7 +19,7 @@ class TestKensoConfigDefaults:
         assert cfg.chunk_size == 4000
         assert cfg.chunk_overlap == 0
         assert cfg.search_limit_max == 20
-        assert cfg.log_level == "INFO"
+        assert cfg.log_level == "WARNING"
 
     def test_frozen(self):
         cfg = KensoConfig()

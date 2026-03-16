@@ -35,7 +35,7 @@ async def app_lifespan(server):
     from kenso.config import KensoConfig
 
     config = KensoConfig.from_env()
-    logging.basicConfig(level=getattr(logging, config.log_level, logging.INFO))
+    logging.basicConfig(level=getattr(logging, config.log_level, logging.WARNING))
     backend = Backend(config)
     await backend.startup()
 
