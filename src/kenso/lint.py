@@ -830,6 +830,43 @@ def format_detail(result: LintResult) -> str:
     return "\n".join(lines)
 
 
+def format_ingest_summary(result: LintResult) -> str:
+    """Format lint result as a compact summary for ingest output."""
+    files_with_issues = sum(1 for fr in result.file_results if fr.violations)
+
+    lines = [f"  Quality Score: {result.score}/100"]
+
+    # Collect violation counts per rule
+    rule_counts: dict[str, int] = {}
+    for fr in result.file_results:
+        seen_rules: set[str] = set()
+        for v in fr.violations:
+            if v.rule not in seen_rules:
+                rule_counts[v.rule] = rule_counts.get(v.rule, 0) + 1
+                seen_rules.add(v.rule)
+
+    if rule_counts:
+        sorted_rules = sorted(
+            rule_counts.keys(),
+            key=lambda r: (-_IMPACT.get(r, 0), r),
+        )
+        for rule in sorted_rules:
+            label = _RULE_LABELS.get(rule, rule)
+            count = rule_counts[rule]
+            impact = _IMPACT.get(rule, 0)
+            impact_str = f"+{impact}%" if impact else ""
+            lines.append(f"    {label:<37} ({rule}) {count:>3}   {impact_str:>5}")
+
+    if files_with_issues:
+        lines.append(
+            f"  {files_with_issues} files with issues. Run kenso lint --detail for specifics."
+        )
+    else:
+        lines.append("  All checks passed.")
+
+    return "\n".join(lines)
+
+
 def format_json(result: LintResult) -> str:
     """Format lint result as JSON output."""
     violations_list = []

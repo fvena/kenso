@@ -83,6 +83,19 @@ def cmd_ingest(args: argparse.Namespace) -> None:
                 " improved search."
             )
 
+        # Append lint quality summary if there are indexable files
+        has_indexable = any(r.action in ("ingested", "unchanged") for r in results)
+        if has_indexable:
+            try:
+                from kenso.lint import format_ingest_summary, lint_path
+
+                chunk_size = int(os.environ.get("KENSO_CHUNK_SIZE", "4000"))
+                lint_result = lint_path(args.path, chunk_size=chunk_size)
+                print(f"\n{format_ingest_summary(lint_result)}")
+            except Exception:
+                log.debug("lint summary failed", exc_info=True)
+                print("\n  Warning: Could not generate quality summary.")
+
     asyncio.run(_run())
 
 

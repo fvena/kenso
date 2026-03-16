@@ -14,6 +14,7 @@ from kenso.lint import (
     _compute_file_score,
     _rough_stem,
     format_detail,
+    format_ingest_summary,
     format_json,
     format_summary,
     lint_path,
@@ -802,6 +803,48 @@ class TestFormatDetail:
         assert "error" in lines[0]
         assert "warning" in lines[1]
         assert "info" in lines[2]
+
+
+class TestFormatIngestSummary:
+    def test_shows_score_and_issues(self):
+        fr = FileResult(
+            path="test.md",
+            score=80,
+            violations=[
+                Violation("KS003", "warning", "missing-tags", "No tags"),
+            ],
+        )
+        result = LintResult(score=80, files=1, errors=0, warnings=1, info=0, file_results=[fr])
+        output = format_ingest_summary(result)
+        assert "Quality Score: 80/100" in output
+        assert "1 files with issues" in output
+        assert "KS003" in output
+        assert "kenso lint --detail" in output
+
+    def test_all_clean(self):
+        fr = FileResult(path="clean.md", score=100, violations=[])
+        result = LintResult(score=100, files=1, errors=0, warnings=0, info=0, file_results=[fr])
+        output = format_ingest_summary(result)
+        assert "Quality Score: 100/100" in output
+        assert "All checks passed" in output
+
+    def test_multiple_files_with_issues(self):
+        fr1 = FileResult(
+            path="a.md",
+            score=70,
+            violations=[Violation("KS004", "warning", "missing-title", "No title")],
+        )
+        fr2 = FileResult(path="b.md", score=100, violations=[])
+        fr3 = FileResult(
+            path="c.md",
+            score=60,
+            violations=[Violation("KS003", "warning", "missing-tags", "No tags")],
+        )
+        result = LintResult(
+            score=77, files=3, errors=0, warnings=2, info=0, file_results=[fr1, fr2, fr3]
+        )
+        output = format_ingest_summary(result)
+        assert "2 files with issues" in output
 
 
 class TestFormatJson:

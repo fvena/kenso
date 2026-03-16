@@ -36,6 +36,52 @@ class TestCLIIngest:
         captured = capsys.readouterr()
         assert "0 ingested" in captured.out or "error" in captured.out.lower()
 
+    def test_ingest_shows_lint_summary(self, tmp_path, capsys):
+        md = tmp_path / "doc.md"
+        md.write_text(
+            "---\ntags: [a]\n---\n# My Title\n\nSome preamble text here.\n\n"
+            "## Section One\n\nContent of section one with enough text.\n"
+        )
+        cmd_ingest(_parse_args("ingest", str(tmp_path)))
+        captured = capsys.readouterr()
+        assert "1 ingested" in captured.out
+        assert "Quality Score:" in captured.out
+
+    def test_ingest_lint_matches_standalone(self, tmp_path, capsys):
+        md = tmp_path / "doc.md"
+        md.write_text(
+            "---\ntags: [a]\n---\n# My Title\n\nSome preamble text here.\n\n"
+            "## Section One\n\nContent of section one with enough text.\n"
+        )
+        cmd_ingest(_parse_args("ingest", str(tmp_path)))
+        captured = capsys.readouterr()
+
+        from kenso.lint import lint_path
+
+        lint_result = lint_path(str(tmp_path))
+        assert f"Quality Score: {lint_result.score}/100" in captured.out
+
+    def test_ingest_empty_dir_no_lint(self, tmp_path, capsys):
+        cmd_ingest(_parse_args("ingest", str(tmp_path)))
+        captured = capsys.readouterr()
+        assert "0 ingested" in captured.out
+        assert "Quality Score:" not in captured.out
+
+    def test_ingest_lint_failure_does_not_fail_ingest(self, tmp_path, monkeypatch, capsys):
+        md = tmp_path / "doc.md"
+        md.write_text(
+            "---\ntags: [a]\n---\n# My Title\n\nSome preamble text here.\n\n"
+            "## Section One\n\nContent of section one with enough text.\n"
+        )
+        monkeypatch.setattr(
+            "kenso.lint.lint_path",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        cmd_ingest(_parse_args("ingest", str(tmp_path)))
+        captured = capsys.readouterr()
+        assert "1 ingested" in captured.out
+        assert "Warning: Could not generate quality summary" in captured.out
+
 
 class TestCLIStats:
     def test_stats_human(self, capsys):
