@@ -415,61 +415,35 @@ def cmd_lint(args: argparse.Namespace) -> None:
 
 
 def cmd_install(args: argparse.Namespace) -> None:
-    """Install kenso commands into LLM runtime directories."""
+    """Install kenso skills into LLM runtime directories."""
     from pathlib import Path
 
-    from kenso.install import find_project_root, install_claude, install_codex
+    from kenso.install import (
+        find_project_root,
+        install_claude,
+        install_codex,
+        install_standard,
+    )
 
     do_claude = args.claude
     do_codex = args.codex
-    do_all = args.all
-
-    if do_all:
-        do_claude = do_codex = True
-
-    explicit = do_claude or do_codex
 
     root = find_project_root()
     if root is None:
-        if explicit:
-            # User explicitly asked to install — trust them and use CWD.
-            root = Path.cwd().resolve()
-        else:
-            output(
-                f"{Style.RED}Error: could not find project root.{Style.RESET} "
-                "Run from inside a project directory "
-                "(one with .git/, pyproject.toml, etc.)."
-            )
-            sys.exit(1)
-
-    # Auto-detect if no flags given
-    if not explicit:
-        has_claude = (root / ".claude").is_dir()
-        has_codex = (root / ".codex").is_dir()
-        if has_claude:
-            do_claude = True
-        if has_codex:
-            do_codex = True
-        if not do_claude and not do_codex:
-            output(
-                "No LLM runtimes detected (.claude/ or .codex/ not found).\n"
-                "Use kenso install --claude, --codex, or --all to install explicitly."
-            )
-            sys.exit(1)
-
-    header("install")
+        root = Path.cwd().resolve()
 
     if do_claude:
+        header("installing for Claude Code")
         lines = install_claude(root)
-        for line in lines:
-            output(line)
-
-    if do_codex:
-        if do_claude:
-            output()
+    elif do_codex:
+        header("installing for Codex CLI")
         lines = install_codex(root)
-        for line in lines:
-            output(line)
+    else:
+        header("installing skills")
+        lines = install_standard(root)
+
+    for line in lines:
+        output(line)
 
 
 # ── Logging & main ─────────────────────────────────────────────────
@@ -529,10 +503,9 @@ def main() -> None:
     group.add_argument("--json", action="store_true", help="Output as JSON")
 
     # install
-    p = sub.add_parser("install", help="Install kenso commands for an LLM runtime")
+    p = sub.add_parser("install", help="Install kenso skills for an LLM runtime")
     p.add_argument("--claude", action="store_true", help="Install for Claude Code")
-    p.add_argument("--codex", action="store_true", help="Install for Codex CLI")
-    p.add_argument("--all", action="store_true", help="Install for all supported runtimes")
+    p.add_argument("--codex", action="store_true", help="Install for Codex CLI (legacy)")
 
     args = parser.parse_args()
 
