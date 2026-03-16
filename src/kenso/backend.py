@@ -14,9 +14,14 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Backend",
-    "RELEVANCE_FLOOR_SCORE",
-    "RELEVANCE_HIGH_RATIO",
-    "RELEVANCE_MEDIUM_RATIO",
+    "AND_HIGH_RATIO",
+    "AND_MEDIUM_RATIO",
+    "NEAR_HIGH_RATIO",
+    "NEAR_MEDIUM_RATIO",
+    "OR_HIGH_SCORE",
+    "OR_HIGH_RATIO",
+    "OR_MEDIUM_SCORE",
+    "OR_MEDIUM_RATIO",
     "STOP_WORDS",
     "_assign_relevance",
     "_load_synonyms",
@@ -24,9 +29,21 @@ __all__ = [
 ]
 
 # ── Relevance constants ──────────────────────────────────────────────
-RELEVANCE_HIGH_RATIO = 0.6
-RELEVANCE_MEDIUM_RATIO = 0.3
-RELEVANCE_FLOOR_SCORE = 3.0
+# AND stage: all query terms matched — generous thresholds.
+AND_HIGH_RATIO = 0.5
+AND_MEDIUM_RATIO = 0.25
+
+# NEAR stage: terms are close together — moderate confidence.
+NEAR_HIGH_RATIO = 0.6
+NEAR_MEDIUM_RATIO = 0.3
+
+# OR stage: only one term matched — require strong absolute scores.
+# Calibrated from eval harness: AND-stage correct results score 2.2–7.9,
+# so OR results need scores in that range to be considered relevant.
+OR_HIGH_SCORE = 8.0
+OR_HIGH_RATIO = 0.8
+OR_MEDIUM_SCORE = 5.0
+OR_MEDIUM_RATIO = 0.5
 
 log = logging.getLogger("kenso")
 
@@ -363,11 +380,10 @@ def _to_fts5_queries(
 
 
 def _assign_relevance(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Tag each result with a ``relevance`` hint based on score distribution.
+    """Tag each result with a ``relevance`` hint based on score and cascade stage.
 
-    - ``"high"``: score >= 60% of the best score
-    - ``"medium"``: score >= 30% of the best score
-    - ``"low"``: score < 30% of the best score, or all scores below floor
+    The cascade stage is the strongest signal: AND means all query terms matched
+    (high confidence), OR means only one term matched (low confidence by default).
     """
     if not results:
         return results
@@ -375,18 +391,31 @@ def _assign_relevance(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     best_score = results[0]["score"]
 
     for r in results:
-        if best_score < RELEVANCE_FLOOR_SCORE:
-            r["relevance"] = "low"
-        elif best_score > 0:
-            ratio = r["score"] / best_score
-            if ratio >= RELEVANCE_HIGH_RATIO:
+        score = r["score"]
+        ratio = score / best_score if best_score > 0 else 0
+        stage = r.get("cascade_stage", "OR")
+
+        if stage == "AND":
+            if ratio >= AND_HIGH_RATIO:
                 r["relevance"] = "high"
-            elif ratio >= RELEVANCE_MEDIUM_RATIO:
+            elif ratio >= AND_MEDIUM_RATIO:
                 r["relevance"] = "medium"
             else:
                 r["relevance"] = "low"
-        else:
-            r["relevance"] = "low"
+        elif stage == "NEAR":
+            if ratio >= NEAR_HIGH_RATIO:
+                r["relevance"] = "high"
+            elif ratio >= NEAR_MEDIUM_RATIO:
+                r["relevance"] = "medium"
+            else:
+                r["relevance"] = "low"
+        else:  # OR
+            if score >= OR_HIGH_SCORE and ratio >= OR_HIGH_RATIO:
+                r["relevance"] = "high"
+            elif score >= OR_MEDIUM_SCORE and ratio >= OR_MEDIUM_RATIO:
+                r["relevance"] = "medium"
+            else:
+                r["relevance"] = "low"
 
     return results
 

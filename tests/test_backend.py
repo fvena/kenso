@@ -469,22 +469,19 @@ class TestAssignRelevance:
     def test_empty_results(self):
         assert _assign_relevance([]) == []
 
-    def test_single_high_score_result(self):
-        results = [{"score": 10.0}]
+    # ── AND stage tests ──────────────────────────────────────────────
+
+    def test_and_single_high_score(self):
+        results = [{"score": 10.0, "cascade_stage": "AND"}]
         _assign_relevance(results)
         assert results[0]["relevance"] == "high"
 
-    def test_single_result_below_floor(self):
-        results = [{"score": 1.0}]
-        _assign_relevance(results)
-        assert results[0]["relevance"] == "low"
-
-    def test_distribution(self):
+    def test_and_distribution(self):
         results = [
-            {"score": 10.0},
-            {"score": 7.0},  # 70% → high
-            {"score": 4.0},  # 40% → medium
-            {"score": 2.0},  # 20% → low
+            {"score": 10.0, "cascade_stage": "AND"},
+            {"score": 6.0, "cascade_stage": "AND"},  # 60% → high
+            {"score": 3.0, "cascade_stage": "AND"},  # 30% → medium
+            {"score": 2.0, "cascade_stage": "AND"},  # 20% → low
         ]
         _assign_relevance(results)
         assert results[0]["relevance"] == "high"
@@ -492,34 +489,100 @@ class TestAssignRelevance:
         assert results[2]["relevance"] == "medium"
         assert results[3]["relevance"] == "low"
 
-    def test_absolute_floor_overrides_all(self):
+    def test_and_boundary_at_fifty_percent(self):
         results = [
-            {"score": 2.5},
-            {"score": 2.0},
-            {"score": 1.5},
-        ]
-        _assign_relevance(results)
-        assert all(r["relevance"] == "low" for r in results)
-
-    def test_boundary_at_sixty_percent(self):
-        results = [
-            {"score": 10.0},
-            {"score": 6.0},  # exactly 60% → high
-            {"score": 5.99},  # just below → medium
+            {"score": 10.0, "cascade_stage": "AND"},
+            {"score": 5.0, "cascade_stage": "AND"},  # exactly 50% → high
+            {"score": 4.99, "cascade_stage": "AND"},  # just below → medium
         ]
         _assign_relevance(results)
         assert results[1]["relevance"] == "high"
         assert results[2]["relevance"] == "medium"
 
-    def test_boundary_at_thirty_percent(self):
+    def test_and_boundary_at_twenty_five_percent(self):
         results = [
-            {"score": 10.0},
-            {"score": 3.0},  # exactly 30% → medium
-            {"score": 2.99},  # just below → low
+            {"score": 10.0, "cascade_stage": "AND"},
+            {"score": 2.5, "cascade_stage": "AND"},  # exactly 25% → medium
+            {"score": 2.49, "cascade_stage": "AND"},  # just below → low
         ]
         _assign_relevance(results)
         assert results[1]["relevance"] == "medium"
         assert results[2]["relevance"] == "low"
+
+    # ── NEAR stage tests ─────────────────────────────────────────────
+
+    def test_near_distribution(self):
+        results = [
+            {"score": 10.0, "cascade_stage": "NEAR"},
+            {"score": 7.0, "cascade_stage": "NEAR"},  # 70% → high
+            {"score": 4.0, "cascade_stage": "NEAR"},  # 40% → medium
+            {"score": 2.0, "cascade_stage": "NEAR"},  # 20% → low
+        ]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "high"
+        assert results[1]["relevance"] == "high"
+        assert results[2]["relevance"] == "medium"
+        assert results[3]["relevance"] == "low"
+
+    # ── OR stage tests ───────────────────────────────────────────────
+
+    def test_or_high_requires_strong_score_and_ratio(self):
+        results = [
+            {"score": 10.0, "cascade_stage": "OR"},  # 10 >= 8, ratio 1.0 → high
+            {"score": 8.0, "cascade_stage": "OR"},  # 8 >= 8, ratio 0.8 → high
+            {"score": 7.99, "cascade_stage": "OR"},  # below 8.0 → not high
+        ]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "high"
+        assert results[1]["relevance"] == "high"
+        assert results[2]["relevance"] == "medium"  # 7.99 >= 5.0, ratio 0.799 >= 0.5
+
+    def test_or_medium_requires_moderate_score_and_ratio(self):
+        results = [
+            {"score": 10.0, "cascade_stage": "OR"},
+            {"score": 5.0, "cascade_stage": "OR"},  # 5 >= 5, ratio 0.5 → medium
+            {"score": 4.99, "cascade_stage": "OR"},  # below 5.0 → low
+        ]
+        _assign_relevance(results)
+        assert results[1]["relevance"] == "medium"
+        assert results[2]["relevance"] == "low"
+
+    def test_or_noise_all_low(self):
+        """OR-stage noise results should all be low even with similar scores."""
+        results = [
+            {"score": 5.9, "cascade_stage": "OR"},
+            {"score": 5.5, "cascade_stage": "OR"},
+            {"score": 4.8, "cascade_stage": "OR"},
+            {"score": 2.9, "cascade_stage": "OR"},
+        ]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "medium"
+        assert results[1]["relevance"] == "medium"
+        assert results[2]["relevance"] == "low"
+        assert results[3]["relevance"] == "low"
+
+    def test_or_with_high_top_score(self):
+        """OR results where top score is genuinely strong."""
+        results = [
+            {"score": 15.0, "cascade_stage": "OR"},  # high (15 >= 8, ratio 1.0)
+            {"score": 12.0, "cascade_stage": "OR"},  # high (12 >= 8, ratio 0.8)
+            {"score": 8.0, "cascade_stage": "OR"},  # medium (8 >= 5, ratio 0.53)
+            {"score": 3.0, "cascade_stage": "OR"},  # low (3 < 5)
+        ]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "high"
+        assert results[1]["relevance"] == "high"
+        assert results[2]["relevance"] == "medium"
+        assert results[3]["relevance"] == "low"
+
+    # ── Default stage (missing cascade_stage) ────────────────────────
+
+    def test_missing_cascade_stage_defaults_to_or(self):
+        """Results without cascade_stage should use OR (most conservative)."""
+        results = [{"score": 10.0}, {"score": 6.0}]
+        _assign_relevance(results)
+        assert results[0]["relevance"] == "high"
+        assert results[1]["relevance"] == "medium"
 
 
 class TestCascadeStage:
