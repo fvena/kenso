@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -54,6 +55,10 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         counts = Counter(r.action for r in results)
         total_chunks = sum(r.chunks for r in results)
 
+        if args.json:
+            _print_ingest_json(args.path, results, counts, total_chunks)
+            return
+
         for r in results:
             status = {
                 "ingested": "✓",
@@ -97,6 +102,59 @@ def cmd_ingest(args: argparse.Namespace) -> None:
                 print("\n  Warning: Could not generate quality summary.")
 
     asyncio.run(_run())
+
+
+def _print_ingest_json(
+    path: str,
+    results: list,
+    counts: Counter,
+    total_chunks: int,
+) -> None:
+    """Print ingest + lint results as a single JSON object to stdout."""
+    files_list = []
+    for r in results:
+        entry: dict = {
+            "path": r.path,
+            "status": r.action,
+            "chunks": r.chunks,
+        }
+        if r.title is not None:
+            entry["title"] = r.title
+        if r.category is not None:
+            entry["category"] = r.category
+        files_list.append(entry)
+
+    ingest_data = {
+        "path": path,
+        "total_files": len(results),
+        "ingested": counts.get("ingested", 0),
+        "unchanged": counts.get("unchanged", 0),
+        "skipped": counts.get("skipped", 0),
+        "removed": counts.get("removed", 0),
+        "errors": counts.get("error", 0),
+        "total_chunks": total_chunks,
+        "files": files_list,
+    }
+
+    # Build lint data using the same schema as `kenso lint --json`
+    lint_data = None
+    has_indexable = any(r.action in ("ingested", "unchanged") for r in results)
+    if has_indexable:
+        try:
+            from kenso.lint import format_json as lint_format_json
+            from kenso.lint import lint_path
+
+            chunk_size = int(os.environ.get("KENSO_CHUNK_SIZE", "4000"))
+            lint_result = lint_path(path, chunk_size=chunk_size)
+            lint_data = json.loads(lint_format_json(lint_result))
+        except Exception:
+            log.debug("lint JSON failed", exc_info=True)
+
+    output: dict = {"ingest": ingest_data}
+    if lint_data is not None:
+        output["lint"] = lint_data
+
+    print(json.dumps(output, indent=2))
 
 
 def cmd_search(args: argparse.Namespace) -> None:
@@ -196,6 +254,7 @@ def main() -> None:
     # ingest
     p = sub.add_parser("ingest", help="Ingest markdown files")
     p.add_argument("path", help="File or directory to ingest")
+    p.add_argument("--json", action="store_true", help="Output as JSON")
 
     # search
     p = sub.add_parser("search", help="Search documents")

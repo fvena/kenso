@@ -33,6 +33,8 @@ class IngestResult:
     chunks: int
     action: str  # "ingested", "unchanged", "skipped", "error"
     detail: str = ""
+    title: str | None = None
+    category: str | None = None
 
 
 def content_hash(text: str) -> str:
@@ -670,7 +672,11 @@ async def ingest_path(
                 except (OSError, Exception) as exc:
                     log.warning("insert_links failed for %s: %s", rel, exc)
 
-            results.append(IngestResult(path=rel, chunks=count, action="ingested"))
+            results.append(
+                IngestResult(
+                    path=rel, chunks=count, action="ingested", title=title, category=category
+                )
+            )
             log.info("[%d/%d] ingested: %s (%d chunks)", idx, total_files, rel, count)
 
         # Clean up stale documents (files removed from disk).

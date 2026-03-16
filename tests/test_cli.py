@@ -83,6 +83,89 @@ class TestCLIIngest:
         assert "Warning: Could not generate quality summary" in captured.out
 
 
+class TestCLIIngestJSON:
+    def test_json_output_is_valid(self, tmp_path, capsys):
+        md = tmp_path / "doc.md"
+        md.write_text(
+            "---\ntags: [a]\ncategory: docs\n---\n# My Title\n\nSome preamble text.\n\n"
+            "## Section One\n\nContent of section one with enough text.\n"
+        )
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--json"))
+        captured = capsys.readouterr()
+        import json
+
+        data = json.loads(captured.out)
+        assert "ingest" in data
+        assert "lint" in data
+
+    def test_json_ingest_fields(self, tmp_path, capsys):
+        md = tmp_path / "doc.md"
+        md.write_text(
+            "---\ntags: [a]\ncategory: docs\n---\n# My Title\n\nSome preamble text.\n\n"
+            "## Section One\n\nContent of section one with enough text.\n"
+        )
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--json"))
+        captured = capsys.readouterr()
+        import json
+
+        ingest = json.loads(captured.out)["ingest"]
+        assert ingest["path"] == str(tmp_path)
+        assert ingest["total_files"] == 1
+        assert ingest["ingested"] == 1
+        assert ingest["unchanged"] == 0
+        assert ingest["skipped"] == 0
+        assert ingest["total_chunks"] > 0
+        assert len(ingest["files"]) == 1
+        f = ingest["files"][0]
+        assert f["status"] == "ingested"
+        assert f["title"] == "My Title"
+        assert f["category"] == "docs"
+        assert f["chunks"] > 0
+
+    def test_json_lint_matches_standalone(self, tmp_path, capsys):
+        md = tmp_path / "doc.md"
+        md.write_text(
+            "---\ntags: [a]\n---\n# My Title\n\nSome preamble text here.\n\n"
+            "## Section One\n\nContent of section one with enough text.\n"
+        )
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--json"))
+        captured = capsys.readouterr()
+        import json
+
+        lint_from_ingest = json.loads(captured.out)["lint"]
+
+        from kenso.lint import format_json as lint_format_json
+        from kenso.lint import lint_path
+
+        lint_result = lint_path(str(tmp_path))
+        lint_standalone = json.loads(lint_format_json(lint_result))
+
+        assert lint_from_ingest == lint_standalone
+
+    def test_json_empty_dir(self, tmp_path, capsys):
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--json"))
+        captured = capsys.readouterr()
+        import json
+
+        data = json.loads(captured.out)
+        assert data["ingest"]["total_files"] == 1  # skipped entry
+        assert data["ingest"]["ingested"] == 0
+        assert "lint" not in data
+
+    def test_json_no_extra_stdout(self, tmp_path, capsys):
+        md = tmp_path / "doc.md"
+        md.write_text(
+            "---\ntags: [a]\n---\n# My Title\n\nSome preamble text here.\n\n"
+            "## Section One\n\nContent of section one with enough text.\n"
+        )
+        cmd_ingest(_parse_args("ingest", str(tmp_path), "--json"))
+        captured = capsys.readouterr()
+        import json
+
+        # stdout must be pure parseable JSON — no banners, no warnings
+        json.loads(captured.out)  # raises if not valid JSON
+
+
 class TestCLIStats:
     def test_stats_human(self, capsys):
         cmd_stats(_parse_args("stats"))
@@ -102,6 +185,7 @@ def _parse_args(*args: str):
 
     p = sub.add_parser("ingest")
     p.add_argument("path")
+    p.add_argument("--json", action="store_true")
 
     p = sub.add_parser("search")
     p.add_argument("query")
