@@ -43,12 +43,11 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     from kenso.config import KensoConfig
     from kenso.ingest import ingest_path
 
-    config = KensoConfig.from_env(db_override=getattr(args, "db", None))
+    config = KensoConfig.from_env(
+        db_override=getattr(args, "db", None),
+        create_if_missing=True,
+    )
     _log_database(config)
-
-    # Ensure parent directory exists for the database
-    if config.database_url and config.database_url != ":memory:":
-        os.makedirs(os.path.dirname(config.database_url), exist_ok=True)
 
     async def _run():
         results = await ingest_path(config, args.path)

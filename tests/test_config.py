@@ -38,7 +38,7 @@ class TestKensoConfigFromEnv:
         cfg = KensoConfig.from_env()
         assert cfg.transport == "stdio"
         assert cfg.database_url == str(tmp_path / ".kenso" / "docs.db")
-        assert cfg.database_source == "local project database"
+        assert cfg.database_source == "project database"
 
     def test_custom_database_url(self, monkeypatch):
         monkeypatch.setenv("KENSO_DATABASE_URL", "/tmp/test.db")
@@ -53,7 +53,7 @@ class TestKensoConfigFromEnv:
         monkeypatch.chdir(tmp_path)
         cfg = KensoConfig.from_env()
         assert cfg.database_url == str(tmp_path / ".kenso" / "docs.db")
-        assert cfg.database_source == "local project database"
+        assert cfg.database_source == "project database"
 
     def test_global_fallback(self, monkeypatch, tmp_path):
         """When no .kenso/ and global DB exists, use global."""
@@ -65,7 +65,39 @@ class TestKensoConfigFromEnv:
         monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
         cfg = KensoConfig.from_env()
         assert cfg.database_url == str(global_dir / "docs.db")
-        assert cfg.database_source == "global database"
+        assert cfg.database_source == "global fallback"
+
+    def test_create_if_missing_creates_kenso_dir(self, monkeypatch, tmp_path):
+        """With create_if_missing=True, .kenso/ is created and used over global."""
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        monkeypatch.chdir(tmp_path)
+        global_dir = tmp_path / "fakehome" / ".local" / "share" / "kenso"
+        global_dir.mkdir(parents=True)
+        (global_dir / "docs.db").touch()
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
+
+        cfg = KensoConfig.from_env(create_if_missing=True)
+        assert cfg.database_url == str(tmp_path / ".kenso" / "docs.db")
+        assert cfg.database_source == "project database, created"
+        assert (tmp_path / ".kenso").is_dir()
+
+    def test_create_if_missing_no_effect_with_override(self, monkeypatch, tmp_path):
+        """create_if_missing has no effect when --db is set."""
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        monkeypatch.chdir(tmp_path)
+        cfg = KensoConfig.from_env(db_override="/tmp/flag.db", create_if_missing=True)
+        assert cfg.database_url == "/tmp/flag.db"
+        assert cfg.database_source == "--db flag"
+        assert not (tmp_path / ".kenso").exists()
+
+    def test_create_if_missing_no_effect_with_existing_dir(self, monkeypatch, tmp_path):
+        """create_if_missing uses existing .kenso/ without 'created' label."""
+        monkeypatch.delenv("KENSO_DATABASE_URL", raising=False)
+        (tmp_path / ".kenso").mkdir()
+        monkeypatch.chdir(tmp_path)
+        cfg = KensoConfig.from_env(create_if_missing=True)
+        assert cfg.database_url == str(tmp_path / ".kenso" / "docs.db")
+        assert cfg.database_source == "project database"
 
     def test_env_var_wins_over_local(self, monkeypatch, tmp_path):
         """KENSO_DATABASE_URL takes precedence over .kenso/ dir."""
