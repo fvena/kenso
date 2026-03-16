@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from kenso.cli import cmd_ingest, cmd_stats, main
+from kenso.cli import cmd_ingest, cmd_search, cmd_stats, main
 
 
 @pytest.fixture(autouse=True)
@@ -173,6 +175,121 @@ class TestCLIStats:
         assert "kenso stats" in captured.out
 
 
+class TestCLISearch:
+    """Tests for `kenso search` with --json, --limit, --category flags."""
+
+    @pytest.fixture()
+    def _ingested_docs(self, tmp_path, monkeypatch):
+        """Ingest a small doc set so search has something to find."""
+        db_path = str(tmp_path / "test.db")
+        monkeypatch.setenv("KENSO_DATABASE_URL", db_path)
+
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "settlement.md").write_text(
+            "---\ntitle: Settlement Lifecycle\ncategory: post-trade\n"
+            "tags: [settlement, clearing]\n---\n# Settlement Lifecycle\n\n"
+            "## Failed Settlement Handling\n\n"
+            "When a settlement fails due to insufficient securities, the "
+            "clearing house initiates a buy-in procedure.\n"
+        )
+        (docs / "reporting.md").write_text(
+            "---\ntitle: CNMV Reporting\ncategory: regulatory\n"
+            "tags: [reporting, cnmv]\n---\n# CNMV Reporting\n\n"
+            "## Settlement Reports\n\n"
+            "Settlement data must be reported to CNMV within T+1.\n"
+        )
+        (docs / "onboarding.md").write_text(
+            "---\ntitle: Client Onboarding\ncategory: operations\n"
+            "tags: [kyc, onboarding]\n---\n# Client Onboarding\n\n"
+            "## KYC Process\n\nNew clients must complete KYC verification.\n"
+        )
+        cmd_ingest(_parse_args("ingest", str(docs)))
+
+    def test_default_no_flags(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement"))
+        out = capsys.readouterr().out
+        # Human-readable output — should not be JSON
+        assert "[" in out  # score brackets
+        assert '"query"' not in out
+
+    def test_json_output_valid(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json"))
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["query"] == "settlement"
+        assert isinstance(data["total_results"], int)
+        assert isinstance(data["results"], list)
+
+    def test_json_schema_fields(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json"))
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["total_results"] > 0
+        r = data["results"][0]
+        for key in (
+            "score",
+            "path",
+            "title",
+            "category",
+            "tags",
+            "preview",
+            "snippet",
+            "related_count",
+        ):
+            assert key in r, f"Missing key: {key}"
+
+    def test_limit(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json", "--limit", "1"))
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["total_results"] <= 1
+
+    def test_category_filter(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json", "--category", "post-trade"))
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        for r in data["results"]:
+            assert r["category"] == "post-trade"
+
+    def test_category_no_match_returns_empty(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json", "--category", "nonexistent"))
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["total_results"] == 0
+        assert data["results"] == []
+
+    def test_all_flags_combined(self, _ingested_docs, capsys):
+        cmd_search(
+            _parse_args(
+                "search", "settlement", "--json", "--limit", "1", "--category", "post-trade"
+            )
+        )
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["total_results"] <= 1
+        for r in data["results"]:
+            assert r["category"] == "post-trade"
+
+    def test_json_no_extra_stdout(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--json"))
+        out = capsys.readouterr().out
+        # stdout must be pure parseable JSON
+        json.loads(out)
+
+    def test_limit_in_human_mode(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--limit", "1"))
+        out = capsys.readouterr().out
+        # Count result blocks (each has a score line)
+        score_lines = [line for line in out.splitlines() if line.strip().startswith("[")]
+        assert len(score_lines) <= 1
+
+    def test_category_in_human_mode(self, _ingested_docs, capsys):
+        cmd_search(_parse_args("search", "settlement", "--category", "post-trade"))
+        out = capsys.readouterr().out
+        assert "settlement" in out.lower()
+
+
 # ── Helper ───────────────────────────────────────────────────────────
 
 
@@ -189,6 +306,9 @@ def _parse_args(*args: str):
 
     p = sub.add_parser("search")
     p.add_argument("query")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--limit", type=int, default=5)
+    p.add_argument("--category", type=str, default=None)
 
     sub.add_parser("stats")
 

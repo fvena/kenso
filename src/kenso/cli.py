@@ -169,7 +169,16 @@ def cmd_search(args: argparse.Namespace) -> None:
         backend = Backend(config)
         await backend.startup()
         try:
-            results = await backend.search(args.query, limit=5)
+            results = await backend.search(
+                args.query,
+                limit=args.limit,
+                category=getattr(args, "category", None),
+            )
+
+            if args.json:
+                _print_search_json(args.query, results, config)
+                return
+
             if not results:
                 print("  No results.")
             else:
@@ -184,6 +193,43 @@ def cmd_search(args: argparse.Namespace) -> None:
             await backend.shutdown()
 
     asyncio.run(_run())
+
+
+def _print_search_json(query: str, results: list[dict], config) -> None:
+    """Print search results as a single JSON object to stdout."""
+    from kenso.server import _build_snippet, _detect_match_source
+
+    preview = config.content_preview_chars
+    items = []
+    for r in results:
+        match_source = _detect_match_source(
+            query,
+            title=r["title"],
+            tags=r.get("tags"),
+            section_path=r.get("section_path", ""),
+            category=r.get("category"),
+        )
+        item: dict = {
+            "score": round(float(r["score"]), 4),
+            "path": r["file_path"],
+            "title": r["title"],
+            "category": r.get("category"),
+            "tags": r.get("tags", []),
+            "preview": _build_snippet(r, query, match_source, preview),
+            "snippet": r.get("highlight", ""),
+            "related_count": r.get("related_count", 0),
+        }
+        items.append(item)
+
+    output = {
+        "query": query,
+        "total_results": len(items),
+        "results": items,
+    }
+    if results and results[0].get("corrected_query"):
+        output["corrected_query"] = results[0]["corrected_query"]
+
+    print(json.dumps(output, indent=2))
 
 
 def cmd_stats(args: argparse.Namespace) -> None:
@@ -304,6 +350,9 @@ def main() -> None:
     # search
     p = sub.add_parser("search", help="Search documents")
     p.add_argument("query", help="Search query")
+    p.add_argument("--json", action="store_true", help="Output as JSON")
+    p.add_argument("--limit", type=int, default=5, help="Max results (default 5)")
+    p.add_argument("--category", type=str, default=None, help="Filter by category")
 
     # stats
     sub.add_parser("stats", help="Database statistics")
