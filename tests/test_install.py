@@ -303,9 +303,47 @@ class TestCLIInstall:
         captured = capsys.readouterr()
         assert ".claude/commands/" in captured.out
 
-    def test_no_runtime_exits(self, tmp_path, monkeypatch):
+    def test_no_runtime_exits(self, tmp_path, monkeypatch, capsys):
         (tmp_path / ".git").mkdir()
         monkeypatch.chdir(tmp_path)
+        from kenso.cli import cmd_install
+
+        with pytest.raises(SystemExit):
+            cmd_install(_parse_install_args())
+        captured = capsys.readouterr()
+        assert "No LLM runtimes detected" in captured.out
+        assert "--claude" in captured.out
+
+    def test_explicit_flag_without_project_markers(self, tmp_path, capsys, monkeypatch):
+        """--claude should work even in a directory with no .git/ or pyproject.toml."""
+        # tmp_path has no root markers at all
+        isolated = tmp_path / "bare"
+        isolated.mkdir()
+        monkeypatch.chdir(isolated)
+        commands_dir = _make_canonical(tmp_path / "pkg")
+        with patch("kenso.install._canonical_commands_path", return_value=commands_dir):
+            from kenso.cli import cmd_install
+
+            cmd_install(_parse_install_args("--claude"))
+        assert (isolated / ".claude" / "commands" / "kenso-ask.md").exists()
+
+    def test_explicit_codex_without_project_markers(self, tmp_path, capsys, monkeypatch):
+        """--codex should work even in a directory with no root markers."""
+        isolated = tmp_path / "bare"
+        isolated.mkdir()
+        monkeypatch.chdir(isolated)
+        commands_dir = _make_canonical(tmp_path / "pkg")
+        with patch("kenso.install._canonical_commands_path", return_value=commands_dir):
+            from kenso.cli import cmd_install
+
+            cmd_install(_parse_install_args("--codex"))
+        assert (isolated / ".codex" / "skills" / "kenso-ask" / "SKILL.md").exists()
+
+    def test_no_markers_no_flags_exits(self, tmp_path, monkeypatch):
+        """Without root markers AND without flags, should error about project root."""
+        isolated = tmp_path / "bare"
+        isolated.mkdir()
+        monkeypatch.chdir(isolated)
         from kenso.cli import cmd_install
 
         with pytest.raises(SystemExit):

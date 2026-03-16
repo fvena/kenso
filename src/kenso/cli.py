@@ -416,15 +416,9 @@ def cmd_lint(args: argparse.Namespace) -> None:
 
 def cmd_install(args: argparse.Namespace) -> None:
     """Install kenso commands into LLM runtime directories."""
-    from kenso.install import find_project_root, install_claude, install_codex
+    from pathlib import Path
 
-    root = find_project_root()
-    if root is None:
-        output(
-            f"{Style.RED}Error: could not find project root.{Style.RESET} "
-            "Run from inside a project directory (one with .git/, pyproject.toml, etc.)."
-        )
-        sys.exit(1)
+    from kenso.install import find_project_root, install_claude, install_codex
 
     do_claude = args.claude
     do_codex = args.codex
@@ -433,8 +427,23 @@ def cmd_install(args: argparse.Namespace) -> None:
     if do_all:
         do_claude = do_codex = True
 
+    explicit = do_claude or do_codex
+
+    root = find_project_root()
+    if root is None:
+        if explicit:
+            # User explicitly asked to install — trust them and use CWD.
+            root = Path.cwd().resolve()
+        else:
+            output(
+                f"{Style.RED}Error: could not find project root.{Style.RESET} "
+                "Run from inside a project directory "
+                "(one with .git/, pyproject.toml, etc.)."
+            )
+            sys.exit(1)
+
     # Auto-detect if no flags given
-    if not do_claude and not do_codex:
+    if not explicit:
         has_claude = (root / ".claude").is_dir()
         has_codex = (root / ".codex").is_dir()
         if has_claude:
@@ -443,8 +452,8 @@ def cmd_install(args: argparse.Namespace) -> None:
             do_codex = True
         if not do_claude and not do_codex:
             output(
-                "No runtime detected. Use --claude, --codex, or --all to "
-                "specify which runtime to install for."
+                "No LLM runtimes detected (.claude/ or .codex/ not found).\n"
+                "Use kenso install --claude, --codex, or --all to install explicitly."
             )
             sys.exit(1)
 
