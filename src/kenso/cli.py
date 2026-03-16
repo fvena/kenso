@@ -514,7 +514,7 @@ def main() -> None:
 
     # lint
     p = sub.add_parser("lint", help="Lint markdown files for retrieval quality")
-    p.add_argument("path", help="File or directory to lint")
+    p.add_argument("path", nargs="?", default=".", help="File or directory to lint")
     group = p.add_mutually_exclusive_group()
     group.add_argument("--detail", action="store_true", help="Show per-file violations")
     group.add_argument("--json", action="store_true", help="Output as JSON")
