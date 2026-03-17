@@ -1,6 +1,59 @@
 # CHANGELOG
 
 
+## v2.0.0 (2026-03-17)
+
+### Bug Fixes
+
+- **cli**: Fix project root detection for kenso install --claude
+  ([`f61be4a`](https://github.com/fvena/kenso/commit/f61be4a6b0bd1c0fe3ad1691ed49130766a84deb))
+
+- **config**: Create .kenso/docs.db in project directory by default
+  ([`e5c9e3f`](https://github.com/fvena/kenso/commit/e5c9e3f3b014eb84bee1144f91cca160b0b9201b))
+
+- **search**: Factor cascade_stage into relevance calculation
+  ([`ca40a3f`](https://github.com/fvena/kenso/commit/ca40a3f8b118039d4788fc4e69a400d97e751a32))
+
+### Features
+
+- **cli**: Add --db flag to all CLI commands for database path override
+  ([`38f842d`](https://github.com/fvena/kenso/commit/38f842d57439468df9db6e2ee24597442ed72592))
+
+- **cli**: Add --json, --limit, and --category flags to kenso search
+  ([`ba8d0cb`](https://github.com/fvena/kenso/commit/ba8d0cbc244ff8d27a642a46561976f8246d5635))
+
+- **cli**: Add kenso install command for Claude Code and Codex
+  ([`d3496ae`](https://github.com/fvena/kenso/commit/d3496ae5913da7397cb227b03ad6891af1792134))
+
+- **cli**: Apply style guide — colored output, glyphs, structured formatting
+  ([`355b771`](https://github.com/fvena/kenso/commit/355b7716c3d9ce4391954b362d46f86a07d5e37c))
+
+- **cli**: Default kenso lint path to current directory
+  ([`b27c34e`](https://github.com/fvena/kenso/commit/b27c34e4f7f1ec482a56098003778bf8451e7bce))
+
+- **cli**: Default kenso lint path to current directory
+  ([`ec2ecbc`](https://github.com/fvena/kenso/commit/ec2ecbc85a1f056c2a84045d8ae94cbb5e662ba2))
+
+- **commands**: Create kenso-ask canonical command and directory structure
+  ([`e3e0dcf`](https://github.com/fvena/kenso/commit/e3e0dcfd11fec446253361f6a02a3b8b151a110e))
+
+- **install**: Adopt Agent Skills standard with .agents/skills/ default
+  ([`9a26ee4`](https://github.com/fvena/kenso/commit/9a26ee4f754769f3ffcf4d33e9657ef708059e87))
+
+- **search**: Add relevance indicator to search results for agent consumption
+  ([`6f38b3c`](https://github.com/fvena/kenso/commit/6f38b3c110509beaf5144330eef3ed058fe4bd79))
+
+### Refactoring
+
+- **commands**: Rename slash commands from kenso-X to kenso:X pattern
+  ([`c0b4b91`](https://github.com/fvena/kenso/commit/c0b4b910e4ef01d55ff315f17a4fc315210aa550))
+
+### Breaking Changes
+
+- **install**: Kenso install now defaults to .agents/skills/ instead of configuring MCP. Slash
+  commands renamed from /kenso-X to /kenso:X. The
+
+
 ## v1.4.0 (2026-03-16)
 
 ### Features
