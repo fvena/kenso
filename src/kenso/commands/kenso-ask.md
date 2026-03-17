@@ -1,9 +1,9 @@
 ---
-name: kenso-ask
+name: kenso:ask
 description: "Answer questions about the project using the kenso knowledge base. Use when the user asks about how something works, what the rules are, where something is implemented, or any question that could be answered by the project's documentation."
 ---
 
-# kenso-ask
+# kenso:ask
 
 Answer a question about this project using the kenso knowledge base.
 

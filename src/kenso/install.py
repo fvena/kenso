@@ -60,7 +60,7 @@ def _collect_skills(
 
     skills: list[tuple[str, Path, list[Path]]] = []
     for md in sorted(commands_dir.glob("*.md")):
-        skill_name = md.stem  # e.g. "kenso-ask"
+        skill_name = md.stem  # e.g. "kenso:ask"
         # Check for a matching subdirectory with support files
         support: list[Path] = []
         skill_subdir = commands_dir / skill_name
@@ -142,8 +142,8 @@ def install_claude(root: Path) -> list[str]:
     skill_new = skill_updated = skill_unchanged = 0
 
     for skill_name, src_md, support_files in skills:
-        # Short name for the slash command (kenso-ask → ask)
-        short_name = skill_name.removeprefix("kenso-")
+        # Short name for the slash command (kenso:ask → ask)
+        short_name = skill_name.removeprefix("kenso:")
         raw = src_md.read_text(encoding="utf-8")
         fm = _parse_frontmatter(raw)
         description = fm.get("description", f"Kenso {short_name} skill")

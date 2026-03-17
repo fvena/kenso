@@ -20,27 +20,27 @@ from kenso.install import (
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _make_canonical(tmp_path: Path, name: str = "kenso-ask.md") -> Path:
+def _make_canonical(tmp_path: Path, name: str = "kenso:ask.md") -> Path:
     """Create a minimal canonical skill file in a commands/ directory."""
     commands_dir = tmp_path / "commands"
     commands_dir.mkdir(parents=True, exist_ok=True)
     md = commands_dir / name
     content = (
         "---\n"
-        "name: kenso-ask\n"
+        "name: kenso:ask\n"
         'description: "Ask questions about docs"\n'
         "---\n\n"
-        "# kenso-ask\n\nAnswer questions about the project.\n"
+        "# kenso:ask\n\nAnswer questions about the project.\n"
     )
     md.write_text(content)
     return commands_dir
 
 
-def _make_support_files(commands_dir: Path, skill_name: str = "kenso-ask") -> None:
+def _make_support_files(commands_dir: Path, skill_name: str = "kenso:ask") -> None:
     """Add support files to an existing commands dir under a skill subdir."""
     refs = commands_dir / skill_name / "references"
     refs.mkdir(parents=True, exist_ok=True)
-    (refs / "kenso-rules.md").write_text("# Rules\n\nRule content here.\n")
+    (refs / "kenso:rules.md").write_text("# Rules\n\nRule content here.\n")
 
 
 # ── find_project_root ────────────────────────────────────────────────
@@ -69,7 +69,7 @@ class TestFindProjectRoot:
 
 class TestFrontmatter:
     def test_parse_frontmatter(self):
-        text = '---\nname: kenso-ask\ndescription: "Ask questions about docs"\n---\n\n# Title\n'
+        text = '---\nname: kenso:ask\ndescription: "Ask questions about docs"\n---\n\n# Title\n'
         fm = _parse_frontmatter(text)
         assert fm["description"] == "Ask questions about docs"
 
@@ -86,8 +86,8 @@ class TestCollectSkills:
         skills = _collect_skills(commands_dir)
         assert len(skills) == 1
         name, md, support = skills[0]
-        assert name == "kenso-ask"
-        assert md.name == "kenso-ask.md"
+        assert name == "kenso:ask"
+        assert md.name == "kenso:ask.md"
         assert support == []
 
     def test_collects_support_files(self, tmp_path):
@@ -97,7 +97,7 @@ class TestCollectSkills:
         assert len(skills) == 1
         _, _, support = skills[0]
         assert len(support) == 1
-        assert support[0].name == "kenso-rules.md"
+        assert support[0].name == "kenso:rules.md"
 
     def test_empty_dir(self, tmp_path):
         d = tmp_path / "empty"
@@ -119,14 +119,14 @@ class TestInstallStandard:
 
     def test_creates_skill_file(self, tmp_path):
         self._install(tmp_path)
-        skill = tmp_path / ".agents" / "skills" / "kenso-ask" / "SKILL.md"
+        skill = tmp_path / ".agents" / "skills" / "kenso:ask" / "SKILL.md"
         assert skill.exists()
 
     def test_has_frontmatter(self, tmp_path):
         self._install(tmp_path)
-        content = (tmp_path / ".agents" / "skills" / "kenso-ask" / "SKILL.md").read_text()
+        content = (tmp_path / ".agents" / "skills" / "kenso:ask" / "SKILL.md").read_text()
         assert content.startswith("---\n")
-        assert "name: kenso-ask" in content
+        assert "name: kenso:ask" in content
         assert 'description: "Ask questions about docs"' in content
 
     def test_reports_new(self, tmp_path):
@@ -155,7 +155,7 @@ class TestInstallStandard:
         _make_support_files(commands_dir)
         with patch("kenso.install._canonical_commands_path", return_value=commands_dir):
             install_standard(tmp_path)
-        refs = tmp_path / ".agents" / "skills" / "kenso-ask" / "references" / "kenso-rules.md"
+        refs = tmp_path / ".agents" / "skills" / "kenso:ask" / "references" / "kenso:rules.md"
         assert refs.exists()
 
     def test_no_skills_message(self, tmp_path):
@@ -183,22 +183,22 @@ class TestInstallClaude:
     def test_slash_command_is_thin_wrapper(self, tmp_path):
         self._install(tmp_path)
         content = (tmp_path / ".claude" / "commands" / "kenso" / "ask.md").read_text()
-        assert "@.claude/skills/kenso-ask/SKILL.md" in content
+        assert "@.claude/skills/kenso:ask/SKILL.md" in content
         assert "$ARGUMENTS" in content
         # Thin = short
         assert len(content.strip().splitlines()) <= 5
 
     def test_creates_skill_file(self, tmp_path):
         self._install(tmp_path)
-        skill = tmp_path / ".claude" / "skills" / "kenso-ask" / "SKILL.md"
+        skill = tmp_path / ".claude" / "skills" / "kenso:ask" / "SKILL.md"
         assert skill.exists()
 
     def test_skill_has_full_content(self, tmp_path):
         self._install(tmp_path)
-        content = (tmp_path / ".claude" / "skills" / "kenso-ask" / "SKILL.md").read_text()
+        content = (tmp_path / ".claude" / "skills" / "kenso:ask" / "SKILL.md").read_text()
         assert content.startswith("---\n")
-        assert "name: kenso-ask" in content
-        assert "# kenso-ask" in content
+        assert "name: kenso:ask" in content
+        assert "# kenso:ask" in content
 
     def test_creates_settings_json(self, tmp_path):
         self._install(tmp_path)
@@ -282,14 +282,14 @@ class TestInstallCodex:
 
     def test_creates_skill_dir(self, tmp_path):
         self._install(tmp_path)
-        skill = tmp_path / ".codex" / "skills" / "kenso-ask" / "SKILL.md"
+        skill = tmp_path / ".codex" / "skills" / "kenso:ask" / "SKILL.md"
         assert skill.exists()
 
     def test_has_frontmatter(self, tmp_path):
         self._install(tmp_path)
-        content = (tmp_path / ".codex" / "skills" / "kenso-ask" / "SKILL.md").read_text()
+        content = (tmp_path / ".codex" / "skills" / "kenso:ask" / "SKILL.md").read_text()
         assert content.startswith("---\n")
-        assert "name: kenso-ask" in content
+        assert "name: kenso:ask" in content
         assert 'description: "Ask questions about docs"' in content
 
     def test_reports_new(self, tmp_path):
@@ -333,7 +333,7 @@ class TestCLIInstall:
             from kenso.cli import cmd_install
 
             cmd_install(_parse_install_args())
-        assert (tmp_path / ".agents" / "skills" / "kenso-ask" / "SKILL.md").exists()
+        assert (tmp_path / ".agents" / "skills" / "kenso:ask" / "SKILL.md").exists()
         assert not (tmp_path / ".claude").exists()
         assert not (tmp_path / ".codex").exists()
 
@@ -346,7 +346,7 @@ class TestCLIInstall:
 
             cmd_install(_parse_install_args("--claude"))
         assert (tmp_path / ".claude" / "commands" / "kenso" / "ask.md").exists()
-        assert (tmp_path / ".claude" / "skills" / "kenso-ask" / "SKILL.md").exists()
+        assert (tmp_path / ".claude" / "skills" / "kenso:ask" / "SKILL.md").exists()
         assert (tmp_path / ".claude" / "settings.json").exists()
         assert not (tmp_path / ".agents").exists()
 
@@ -358,7 +358,7 @@ class TestCLIInstall:
             from kenso.cli import cmd_install
 
             cmd_install(_parse_install_args("--codex"))
-        assert (tmp_path / ".codex" / "skills" / "kenso-ask" / "SKILL.md").exists()
+        assert (tmp_path / ".codex" / "skills" / "kenso:ask" / "SKILL.md").exists()
         assert not (tmp_path / ".agents").exists()
         assert not (tmp_path / ".claude").exists()
 
@@ -377,7 +377,7 @@ class TestCLIInstall:
             from kenso.cli import cmd_install
 
             cmd_install(_parse_install_args())
-        assert (isolated / ".agents" / "skills" / "kenso-ask" / "SKILL.md").exists()
+        assert (isolated / ".agents" / "skills" / "kenso:ask" / "SKILL.md").exists()
 
 
 # ── Helper ───────────────────────────────────────────────────────
