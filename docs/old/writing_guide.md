@@ -89,6 +89,12 @@ answers:
   - How are equity trades settled on the platform?
   - What is the T+2 settlement cycle?
   - What happens when a settlement fails?
+predicted_queries:
+  - settlement lifecycle
+  - T+2 settlement process
+  - failed trade resolution
+  - post-trade clearing steps
+  - DVP settlement flow
 relates_to:
   - path: order-management/matching-engine.md
     relation: receives_from
@@ -99,6 +105,8 @@ relates_to:
 **aliases** — Alternative names injected directly into the searchable index as "Also known as: ...". A search for "login" will match this document even if "login" never appears in the body. Use them for: translations, informal names, abbreviations, and terms users might search that don't appear in the body. This is the most effective tool against vocabulary mismatch.
 
 **answers** — Questions this document answers, injected as "Questions this document answers: ...". When an LLM generates a search query from a user's question, the overlap with pre-written questions is very high. Write 2–5 questions in the same language and style your users would ask.
+
+**predicted_queries** — Short phrases (2–5 words each) representing how users would search for this document. Not questions — search phrases. Include informal terms, abbreviations, and task-oriented phrasing that differs from the document's formal language. Injected as "Predicted search queries: ...". This is the most effective tool for closing the vocabulary gap between authors and searchers. A useful heuristic: imagine 5 different people looking for this document — what would each type into the search box?
 
 **relates_to** — Links to related documents. These build a navigable graph that agents can traverse. Each connection to another document in the result set adds a 15% score boost during re-ranking. Use typed relations for richer semantics (see [Relation types](#relation-types)).
 

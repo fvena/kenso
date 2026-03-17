@@ -20,8 +20,8 @@ The `-e` (editable) install means the `kenso` command now points to your local s
 Create a small test knowledge base to work with:
 
 ```bash
-mkdir -p /tmp/kenso-dev/docs
-cat > /tmp/kenso-dev/docs/example.md << 'EOF'
+mkdir -p /tmp/kenso:dev/docs
+cat > /tmp/kenso:dev/docs/example.md << 'EOF'
 ---
 title: Deployment Pipeline
 category: infrastructure
@@ -45,7 +45,7 @@ EOF
 Then test the full workflow:
 
 ```bash
-kenso ingest /tmp/kenso-dev/docs/   # index the files
+kenso ingest /tmp/kenso:dev/docs/   # index the files
 kenso search "deployment"           # test search
 kenso search "rollback"             # test tag matching
 kenso stats                         # check index contents
